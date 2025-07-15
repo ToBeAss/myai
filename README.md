@@ -11,7 +11,7 @@ My personal AI assistant
 ### Steps:
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/EgdeConsulting/Ctrl-Alt-Elite.git
+   git clone https://github.com/ToBeAss/myai.git
    ```
 2. **Create a virtual environment**
    > Creating a Python virtual environment allows you to manage dependencies separately for different projects, preventing conflicts and maintaining cleaner setups. [Real Python, 2024](https://realpython.com/python-virtual-environments-a-primer/)
@@ -47,7 +47,7 @@ My personal AI assistant
         ```bash
         cp .env.example .env
         ```
-    Open the `.env` file and insert the required endpoints and API keys from Azure.
+    Open the `.env` file and insert the API keys.
 
 > [!WARNING]
 > The `.env` file is used to store sensitive information like API keys and database credentials securely. Make sure not to commit it to version control by adding `.env` to your `.gitignore` file.
