@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Optional, List, Dict
 from lib.llm_wrapper import LLM_Wrapper, Response
 from lib.memory import Memory
@@ -47,7 +48,7 @@ class Agent:
         self._chroma = chroma
 
         # Add init instructions to inform the agent of its identity
-        self.add_instruction(f"Du heter {self.name}. {self.description}")
+        self.add_instruction(f"Your name is {self.name}. {self.description}")
     
 
     def _validate_input(self, user_input: str, search_type: str = None, k: int = None) -> None:
@@ -151,10 +152,11 @@ class Agent:
         # Build the prompt for the LLM
         prompt = (
             f"<instructions>\n{formatted_instructions}</instructions>\n\n"
+            f"<relevant_information>\n  Today is {datetime.now().strftime('%A %d. %B %Y and the time is %H:%M')}.\n</relevant_information>\n\n"
             f"<conversation_history>\n{formatted_conversation_history}</conversation_history>\n\n"
             f"<current_query>{user_input}</current_query>\n\n"
             f"<tool_results>\n{formatted_tool_results}{formatted_data}</tool_results>\n\n"
-            "<response_guidelines>Svar på `current_query` basert på instruksjonene dine og relevant kontekst, inkludert samtalehistorikk og resultatene fra eventuelle verktøy, uten å gjenta deg selv.</response_guidelines>"
+            "<response_guidelines>Respond to `current_query` based on your instructions and relevant context, including conversation history and the results of any tools, without repeating yourself.</response_guidelines>"
         )
         return prompt
     

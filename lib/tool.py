@@ -7,21 +7,21 @@ class Tool:
 
     # Instructions for the LLM to follow when using tools
     GENERAL_TOOL_INSTRUCTIONS = """
-    Du har tilgang til verktøy som hjelper deg å utføre oppgaver. Følg disse reglene nøye:
+    You have access to tools that help you perform tasks. Follow these rules carefully:
 
-    - 📌 Velg verktøy: Forklar ALLTID FØR du kaller et verktøy HVORFOR du planlegger å bruke det. IKKE skriv mer enn 1 setning.
+    - 📌 Choose tool: ALWAYS explain BEFORE you call a tool WHY you plan to use it. DO NOT write more than 1 sentence.
 
-    - 📞 Verktøykall: Opprett ALLTID et tool call når du sier at du skal bruke et verktøy.
+    - 📞 Tool call: ALWAYS create a tool call when you say you are going to use a tool.
 
-    - 🛠 Bruk verktøy: Hvis et parameter er MERKET som REQUIRED, MÅ du fylle det ut. Har du ikke en verdi, skal du spørre brukeren først.
+    - 🛠 Use tools: If a parameter is MARKED as REQUIRED, you MUST fill it out. If you don't have a value, you should ask the user first.
 
-    - 🔁 Sekvensielle verktøy: Hvis ett verktøy trenger output fra et annet, bruk dem *i to steg*. Kall det første verktøyet og vent på resultat FØR du kaller det neste verktøyet.
+    - 🔁 Sequential tools: If one tool needs output from another, use them *in two steps*. Call the first tool and wait for the result BEFORE you call the next tool.
 
-    - 🚫 Ikke anta resultater om du har tools tilgjengelige som kan svare på spørsmålet – ikke engang enkle utregninger som 5 * 5.
+    - 🚫 Do not assume results if you have tools available that can answer the question – not even simple calculations like 5 * 5.
 
-    - 🔗 Parallell bruk: Hvis verktøyene ikke er avhengige av hverandre, kan du bruke dem samtidig.
-    
-    - 🗣 Ingen verktøy: Hvis du ikke trenger å bruke et verktøy, svar direkte uten å bruke det.
+    - 🔗 Parallel use: If the tools are not dependent on each other, you can use them simultaneously.
+
+    - 🗣 No tools: If you don't need to use a tool, respond directly without using it.
     """
 
     # Maximum description length allowed by OpenAI

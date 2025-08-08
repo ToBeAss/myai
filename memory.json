@@ -29,6 +29,12 @@
             "timestamp": "09.08.2025 00:27",
             "type": "decision",
             "content": "User decided to use Google Text-to-Speech for TTS due to its high-quality neural voices, wide language support, and easy integration. They chose to pair it with OpenAI Whisper for speech-to-text to leverage the best of both services. The decision was based on the combined quality, features, and compatibility of these tools for their needs."
+        },
+        {
+            "id": 6,
+            "timestamp": "09.08.2025 01:10",
+            "type": "personal",
+            "content": "Tobias used to make YouTube videos, now enjoys coding and occasionally doing music production."
         }
     ]
 }
