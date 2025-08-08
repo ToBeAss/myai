@@ -257,7 +257,7 @@ class Agent:
             #print(f"\n--- {self.name} ---\n--- Iteration {iteration + 1} ---")  # Debugging purposes
             prompt = self._structure_prompt(user_input, tool_results=tool_results)
             #print(prompt)  # Debugging purposes
-            if tool_results: print(Tool.format_tool_calls(tool_results))  # Debugging purposes
+            if tool_results: print(Tool.format_tool_calls_short(tool_results))  # Debugging purposes
             result = self._llm.invoke(prompt, use_tools=True)
             print(f"🤖{self.name}: {result.content}")  # Print the llm's response
 
@@ -320,7 +320,7 @@ class Agent:
             #print(f"\n--- {self.name} ---\n--- Iteration {iteration + 1} ---")  # Debugging purposes
             prompt = self._structure_prompt(user_input, tool_results=tool_results)
             #print(prompt)  # Debugging purposes
-            if tool_results: print(Tool.format_tool_calls(tool_results))  # Debugging purposes
+            if tool_results: print(Tool.format_tool_calls_short(tool_results))  # Debugging purposes
             result_generator = self._llm.stream(prompt, use_tools=True)
 
             # Stream the result token by token and collect tool calls
@@ -350,6 +350,7 @@ class Agent:
                 yield update_stage(Response(""), self.STAGE_TOOL, tool_name)
                 
                 tool_result = Tool.process_tool_call(tool_call, self._tools)
+                #print(f"🛠️ Tool result: {tool_result}")  # Debugging purposes
                 # Format the tool result based on its type
                 if tool_result["type"] == "agent_response":
                     tool_result["result"] = tool_result["result"].content
@@ -362,70 +363,3 @@ class Agent:
         prompt = self._structure_prompt(user_input, tool_results=tool_results)
         for token in self._llm.stream(prompt, use_tools=False):
             yield update_stage(token, self.STAGE_CONTENT)
-    
-
-    def invoke_with_retrieval(self, user_input: str, search_type: str = "similarity_scores", k: int = 5, **kwargs) -> Any:
-        """
-        Processes user input, structures a prompt with retrieval data and invokes the LLM.
-
-        :param user_input: The user input query.
-        :param retrieval: The retrieval data.
-        :param k: The number of results to return.
-        :param kwargs: Additional keyword arguments for the retriever.
-        :return: The LLM's response.
-        """
-        self._validate_input(user_input, search_type, k)
-
-        # Reprompt user input for better retrieval 
-        enhanced_query = self._reprompt(user_input)
-        print(f"🔍: {enhanced_query}")  # Debugging purposes
-
-        # Retrieve data if available
-        retrieved_data = self._retrieve_data(enhanced_query, search_type=search_type, k=k, **kwargs)
-
-        # Get result from LLM
-        prompt = self._structure_prompt(user_input, retrieved_data=retrieved_data)
-        print(prompt)  # Debugging purposes
-        result = self._llm.invoke(prompt)
-
-        # Store question and answer in memory if available
-        if self._memory:
-            self._memory.add_message(user_input, "human")
-            self._memory.add_message(result.content, "ai")
-
-        return result
-    
-
-    def stream_with_retrieval(self, user_input: str, search_type: str = "similarity_scores", k: int = 5, **kwargs) -> Any:
-        """
-        Processes user input, structures a prompt with retrieval data and invokes the LLM.
-
-        :param user_input: The user input query.
-        :param retrieval: The retrieval data.
-        :param k: The number of results to return.
-        :param kwargs: Additional keyword arguments for the retriever.
-        :return: The LLM's response.
-        """
-        self._validate_input(user_input, search_type, k)
-
-        # Reprompt user input for better retrieval
-        enhanced_query = self._reprompt(user_input)
-        print(f"🔍: {enhanced_query}")  # Debugging purposes
-
-        # Retrieve data if available
-        retrieved_data = self._retrieve_data(enhanced_query, search_type=search_type, k=k, **kwargs)
-
-        # Get result generator from LLM
-        prompt = self._structure_prompt(user_input, retrieved_data=retrieved_data)
-        print(prompt)  # Debugging purposes
-        result_generator = self._llm.stream(prompt)
-
-        # Stream the result token by token
-        for token in result_generator:
-            yield token
-            result = token
-
-        # Store question and answer in memory if available
-        if self._memory:
-            self._memory.add_message(user_input, "human")
-            self._memory.add_message(result.response_metadata["final_response"], "ai")

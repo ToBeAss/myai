@@ -238,6 +238,22 @@ class Tool:
             formatted_tool_calls += f"  <tool_call id='{tool_call['id']}' type='{tool_call['type']}' function='{tool_call['function']}'>\n    {tool_call['result']}\n  </tool_call>\n"
         return formatted_tool_calls
     
+    @staticmethod
+    def format_tool_calls_short(tool_calls: List[Dict[str, str]]) -> str:
+        """
+        Formats a list of tool calls into a string.
+
+        :param tool_calls: A list of tool calls.
+        :return: A formatted string containing the tool calls.
+        """
+        formatted_tool_calls = ""
+        for tool_call in tool_calls:
+            # Parse the arguments from JSON string to dictionary
+            args = json.loads(tool_call['function']['arguments'])
+            args_str = ", ".join(f"{key}={value}" for key, value in args.items())
+            formatted_tool_calls += f"🛠️ {tool_call['function']['name']}({args_str})\n"
+        return formatted_tool_calls
+    
 
 
 class ToolBlueprint:

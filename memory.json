@@ -1,0 +1,34 @@
+{
+    "memories": [
+        {
+            "id": 1,
+            "timestamp": "08.08.2025 23:06",
+            "type": "personal",
+            "content": "Tobias likes red wine."
+        },
+        {
+            "id": 2,
+            "timestamp": "14.07.2025 18:29",
+            "type": "project",
+            "content": "Tobias is working on a new AI project, named 'myai'. He aims to integrate speech-to-text and text-to-speech capabilities."
+        },
+        {
+            "id": 3,
+            "timestamp": "08.08.2025 23:46",
+            "type": "project",
+            "content": "Added a Google search function tool to the 'myai' AI project to enhance information gathering and capabilities."
+        },
+        {
+            "id": 4,
+            "timestamp": "09.08.2025 00:14",
+            "type": "project",
+            "content": "Tobias wants to use Whisper as the speech-to-text model for his project 'myai'."
+        },
+        {
+            "id": 5,
+            "timestamp": "09.08.2025 00:27",
+            "type": "decision",
+            "content": "User decided to use Google Text-to-Speech for TTS due to its high-quality neural voices, wide language support, and easy integration. They chose to pair it with OpenAI Whisper for speech-to-text to leverage the best of both services. The decision was based on the combined quality, features, and compatibility of these tools for their needs."
+        }
+    ]
+}
