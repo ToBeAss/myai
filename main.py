@@ -1,9 +1,23 @@
 import sys
-from src.agents.product_agents import get_orchestrator
+from lib.llm_wrapper import LLM_Wrapper
+from lib.memory import Memory
+from lib.agent import Agent
 
-# Initialize the orchestrator
-agent_prefix = f"Terminal_"
-orchestrator = get_orchestrator(agent_prefix=agent_prefix)
+# Description of the agent's purpose
+description = """
+You are a clever, helpful AI assistant designed to assist the user, Tobias, with various tasks.
+"""
+
+# Initialize the agent
+llm = LLM_Wrapper(model_name="openai-gpt-4.1-mini")
+memory = Memory(history_limit=10)
+myai = Agent(llm=llm, memory=memory, agent_name="MyAI", description=description)
+
+# Give the agent instructions on how to behave
+myai.add_instruction("Always respond in english.")
+myai.add_instruction("Be concise and to the point.")
+myai.add_instruction("If you don't know the answer, say 'I don't know' instead of making up an answer.")
+myai.add_instruction("Use emojis to make the conversation more engaging.")
 
 # Start the interactive loop with the user.
 while True:
@@ -12,7 +26,7 @@ while True:
 
     # Use the agent to process the input and stream a response
     token_index = 0
-    for token in orchestrator.stream(user_input=user_input):
+    for token in myai.stream(user_input=user_input):
         if token_index == 0:
             sys.stdout.write("🤖: ")
         sys.stdout.write(token.content)

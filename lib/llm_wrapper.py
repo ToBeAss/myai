@@ -1,7 +1,7 @@
 import os, time
 from dotenv import load_dotenv
 from typing import Any, Optional, Dict, List
-from langchain_openai import AzureChatOpenAI
+from langchain_openai import AzureChatOpenAI, ChatOpenAI
 from openai import BadRequestError, APIConnectionError
 # You can import other models here in the future (e.g., OpenAI, HuggingFace)
 
@@ -24,7 +24,7 @@ class Response:
 class LLM_Wrapper:
     """A wrapper class for interacting with various language models."""
 
-    def __init__(self, model_name: str = "azure-gpt-4.1", **kwargs):
+    def __init__(self, model_name: str = "openai-gpt-4.1-mini", **kwargs):
         """
         Initializes the LLM Wrapper.
 
@@ -56,52 +56,10 @@ class LLM_Wrapper:
                 azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT"),
                 **kwargs # Pass additional parameters
             )
-        elif model_name == "azure-gpt-4o-mini":
-            return AzureChatOpenAI(
-                azure_deployment = "gpt-4o-mini",
-                api_version = "2024-10-21",
-                api_key = os.getenv("AZURE_OPENAI_API_KEY"),
-                azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT"),
-                **kwargs # Pass additional parameters
-            )
-        elif model_name == "azure-gpt-4.1":
-            return AzureChatOpenAI(
-                azure_deployment = "gpt-4.1",
-                api_version = "2024-10-21",
-                api_key = os.getenv("AZURE_OPENAI_API_KEY"),
-                azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT"),
-                **kwargs # Pass additional parameters
-            )
-        elif model_name == "azure-gpt-4.1-mini":
-            return AzureChatOpenAI(
-                azure_deployment = "gpt-4.1-mini",
-                api_version = "2024-10-21",
-                api_key = os.getenv("AZURE_OPENAI_API_KEY"),
-                azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT"),
-                **kwargs # Pass additional parameters
-            )
-        elif model_name == "azure-gpt-4.1-nano":
-            return AzureChatOpenAI(
-                azure_deployment = "gpt-4.1-nano",
-                api_version = "2024-10-21",
-                api_key = os.getenv("AZURE_OPENAI_API_KEY"),
-                azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT"),
-                **kwargs # Pass additional parameters
-            )
-        elif model_name == "azure-o3-mini":
-            return AzureChatOpenAI(
-                azure_deployment = "o3-mini",
-                api_version = "2024-12-01-preview",
-                api_key = os.getenv("AZURE_OPENAI_API_KEY"),
-                azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT"),
-                **kwargs # Pass additional parameters
-            )
-        elif model_name == "azure-o4-mini":
-            return AzureChatOpenAI(
-                azure_deployment = "o4-mini",
-                api_version = "2024-12-01-preview",
-                api_key = os.getenv("AZURE_OPENAI_API_KEY"),
-                azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT"),
+        elif model_name == "openai-gpt-4.1-mini":
+            return ChatOpenAI(
+                model_name = "gpt-4.1-mini",
+                api_key = os.getenv("OPENAI_API_KEY"),
                 **kwargs # Pass additional parameters
             )
         else: 
@@ -188,7 +146,7 @@ class LLM_Wrapper:
                 if token.response_metadata:
                     token.response_metadata['response_time'] = time.time() - start_time
                     token.response_metadata['final_response'] = final_response
-                    token.content += "\n\n"
+                    #token.content += "\n\n"
                 yield token
                 
         except Exception as e:
@@ -209,7 +167,7 @@ class LLM_Wrapper:
                 if token.response_metadata:
                     token.response_metadata['response_time'] = time.time() - start_time
                     token.response_metadata['final_response'] = final_response
-                    token.content += "\n\n"
+                    #token.content += "\n\n"
                 yield token
         except Exception as e:
             yield self._handle_error(e)

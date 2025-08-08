@@ -254,7 +254,7 @@ class Agent:
         tool_results = []
         for iteration in range(max_iterations):
             # Get result from LLM
-            print(f"\n--- {self.name} ---\n--- Iteration {iteration + 1} ---")  # Debugging purposes
+            #print(f"\n--- {self.name} ---\n--- Iteration {iteration + 1} ---")  # Debugging purposes
             prompt = self._structure_prompt(user_input, tool_results=tool_results)
             #print(prompt)  # Debugging purposes
             if tool_results: print(Tool.format_tool_calls(tool_results))  # Debugging purposes
@@ -271,8 +271,8 @@ class Agent:
                 return result
             
             # Print each tool call before calling them
-            for tool_call in result.additional_kwargs["tool_calls"]:
-                print(f"🛠️ Tool call: {tool_call['function']['name']}({tool_call['function']['arguments']})")  # Debugging purposes
+            #for tool_call in result.additional_kwargs["tool_calls"]:
+                #print(f"🛠️ Tool call: {tool_call['function']['name']}({tool_call['function']['arguments']})")  # Debugging purposes
 
             # Process each tool call sequentially
             for tool_call in result.additional_kwargs["tool_calls"]:
@@ -284,7 +284,7 @@ class Agent:
                 tool_results.append(tool_result)
         
         # If max iterations reached, formulate a final response
-        print(f"🤖{self.name}: Maximum iterations ({max_iterations}) reached, formulating final answer...")  # Debugging purposes
+        #print(f"🤖{self.name}: Maximum iterations ({max_iterations}) reached, formulating final answer...")  # Debugging purposes
         prompt = self._structure_prompt(user_input, tool_results=tool_results)
         return self._llm.invoke(prompt, use_tools=False)
     
@@ -317,7 +317,7 @@ class Agent:
         tool_results = []
         for iteration in range(max_iterations):
             # Get result generator from LLM
-            print(f"\n--- {self.name} ---\n--- Iteration {iteration + 1} ---")  # Debugging purposes
+            #print(f"\n--- {self.name} ---\n--- Iteration {iteration + 1} ---")  # Debugging purposes
             prompt = self._structure_prompt(user_input, tool_results=tool_results)
             #print(prompt)  # Debugging purposes
             if tool_results: print(Tool.format_tool_calls(tool_results))  # Debugging purposes
@@ -340,8 +340,8 @@ class Agent:
                 return result
             
             # Print each tool call before calling them
-            for tool_call in result.additional_kwargs["tool_calls"]:
-                print(f"🛠️ Tool call: {tool_call['function']['name']}({tool_call['function']['arguments']})")  # Debugging purposes
+            #for tool_call in result.additional_kwargs["tool_calls"]:
+                #print(f"🛠️ Tool call: {tool_call['function']['name']}({tool_call['function']['arguments']})")  # Debugging purposes
             
             # Process each tool call sequentially
             for tool_call in result.additional_kwargs["tool_calls"]:
@@ -358,7 +358,7 @@ class Agent:
                 tool_results.append(tool_result)
         
         # If max iterations reached, formulate a final response
-        print(f"🤖{self.name}: Maximum iterations ({max_iterations}) reached, formulating final answer...")  # Debugging purposes
+        #print(f"🤖{self.name}: Maximum iterations ({max_iterations}) reached, formulating final answer...")  # Debugging purposes
         prompt = self._structure_prompt(user_input, tool_results=tool_results)
         for token in self._llm.stream(prompt, use_tools=False):
             yield update_stage(token, self.STAGE_CONTENT)
