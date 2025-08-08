@@ -34,7 +34,7 @@ class LLM_Wrapper:
         if not isinstance(model_name, str):
             raise TypeError("Model name must be a string")
         
-        load_dotenv() # Load environment variables from .env file
+        load_dotenv(override=True) # Load environment variables from .env file, overriding existing ones
 
         self._model_name = model_name
         self._model = self._init_model(model_name, **kwargs)
