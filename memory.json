@@ -35,6 +35,18 @@
             "timestamp": "09.08.2025 01:10",
             "type": "personal",
             "content": "Tobias used to make YouTube videos, now enjoys coding and occasionally doing music production."
+        },
+        {
+            "id": 7,
+            "timestamp": "09.08.2025 23:22",
+            "type": "project",
+            "content": "Updated project info: The AI project 'myai' has completed integration of both the Google search functionality and the Whisper speech-to-text functionality, along with Google Text-to-Speech for neural voices and wide language support."
+        },
+        {
+            "id": 8,
+            "timestamp": "09.08.2025 23:22",
+            "type": "project",
+            "content": "Updated project status: Google search functionality and Whisper speech-to-text functionality are finished. Google Text-to-Speech functionality is not finished yet."
         }
     ]
 }

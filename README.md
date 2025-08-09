@@ -6,7 +6,7 @@ My personal AI assistant
 ### Prerequisites:
 
 - *[List required software or dependencies, e.g., Node.js, Java, Docker, etc.]*
-- Python 3.12.9
+- Python 3.13.2
 
 ### Steps:
 1. **Clone the repository**
