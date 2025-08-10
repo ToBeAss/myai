@@ -9,6 +9,8 @@ import os
 import numpy as np
 from typing import Optional, Callable
 import struct
+import ssl
+import urllib.request
 
 class SpeechToText:
     """Speech-to-text handler using OpenAI Whisper for offline processing."""
@@ -22,6 +24,15 @@ class SpeechToText:
         """
         print(f"🎤 Loading Whisper '{model_size}' model... This might take a moment on first run.")
         try:
+            # Create SSL context to handle certificate issues on macOS
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            
+            # Set up urllib to use the SSL context
+            opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ssl_context))
+            urllib.request.install_opener(opener)
+            
             self.model = whisper.load_model(model_size)
             self.is_recording = False
             self.audio_format = pyaudio.paInt16
