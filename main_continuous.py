@@ -4,6 +4,7 @@ from lib.llm_wrapper import LLM_Wrapper
 from lib.memory import Memory
 from lib.agent import Agent
 from lib.speech_to_text import SpeechToText
+from lib.text_to_speech import TextToSpeech
 from tools import (
     read_from_memory_tool_blueprint, 
     write_to_memory_tool_blueprint,
@@ -28,8 +29,19 @@ stt = SpeechToText(model_size="base")  # Upgraded from "tiny" to "base" for bett
 # Restrict to only English and Norwegian (includes all Norwegian variants)
 stt.set_language_preference(language=None, task="transcribe", allowed_languages=['en', 'no', 'nb', 'nn'])
 
+# Initialize text-to-speech system with automatic fallback
+print("🔧 Initializing text-to-speech system...")
+tts = TextToSpeech(
+    voice_name="en-GB-Chirp3-HD-Achernar",  # Premium voice (100k free chars/month) (Alternative: Enceladus)
+    language_code="en-GB",
+    speaking_rate=1.1,
+    pitch=0.0,
+    enforce_free_tier=True,  # Stay within free tier
+    fallback_voice="en-GB-Standard-A"  # Fallback to Standard voice (4M free chars/month)
+)
+
 # Configure wake words (you can customize these)
-stt.set_wake_words(["hey myai", "hey assistant", "computer"])
+stt.set_wake_words(["hey myai", "hey assistant", "computer", "jarvis"])
 
 # Set conversation timeout (how long to wait for follow-up questions)
 stt.set_conversation_timeout(5.0)  # 5 seconds to ask follow-up questions
@@ -52,7 +64,9 @@ def handle_voice_command(command_text):
     # Handle empty or very short commands
     if not command_text or len(command_text.strip()) < 2:
         print("\n👤: [wake word only]")
-        print("🤖: Hi! What can I help you with? 😊")
+        response_text = "Hi! What can I help you with?"
+        print(f"🤖: {response_text}")
+        tts.speak(response_text)
         
         # Enter conversation mode for follow-up
         stt.enter_conversation_mode()
@@ -63,7 +77,9 @@ def handle_voice_command(command_text):
     if "[INCOMPLETE - Please continue or repeat your question]" in command_text:
         cleaned_command = command_text.replace("[INCOMPLETE - Please continue or repeat your question]", "").strip()
         print(f"\n👤: {cleaned_command}")
-        print("🤖: It looks like your question got cut off. Could you please repeat the complete question? I heard '{}'...".format(cleaned_command))
+        response_text = f"It looks like your question got cut off. Could you please repeat the complete question? I heard '{cleaned_command}'..."
+        print(f"🤖: {response_text}")
+        tts.speak(response_text)
         
         # Enter conversation mode for the complete question
         stt.enter_conversation_mode()
@@ -72,15 +88,17 @@ def handle_voice_command(command_text):
     
     print(f"\n👤: {command_text}")
     
-    # Use the agent to process the input and stream a response
-    token_index = 0
+    # Collect the full response first, then speak it
+    print("🤖: ", end="", flush=True)
+    full_response = ""
     for token in myai.stream(user_input=command_text):
-        if token_index == 0:
-            sys.stdout.write("🤖: ")
         sys.stdout.write(token.content)
         sys.stdout.flush()
-        token_index += 1
+        full_response += token.content
     print("\n")
+    
+    # Speak the full response
+    tts.speak(full_response)
     
     # Enter conversation mode to allow follow-up questions
     stt.enter_conversation_mode()
@@ -147,14 +165,16 @@ while True:
                     continue
                 
                 # Use the agent to process the input and stream a response
-                token_index = 0
+                print("🤖: ", end="", flush=True)
+                full_response = ""
                 for token in myai.stream(user_input=user_input):
-                    if token_index == 0:
-                        sys.stdout.write("🤖: ")
                     sys.stdout.write(token.content)
                     sys.stdout.flush()
-                    token_index += 1
+                    full_response += token.content
                 print()
+                
+                # Speak the response
+                tts.speak(full_response)
             break
         
         else:

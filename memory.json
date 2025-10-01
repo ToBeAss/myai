@@ -47,6 +47,24 @@
             "timestamp": "09.08.2025 23:22",
             "type": "project",
             "content": "Updated project status: Google search functionality and Whisper speech-to-text functionality are finished. Google Text-to-Speech functionality is not finished yet."
+        },
+        {
+            "id": 9,
+            "timestamp": "01.10.2025 19:38",
+            "type": "project",
+            "content": "Steps to set up Google Text-to-Speech (TTS): 1. Create a Google Cloud account and enable the Text-to-Speech API. 2. Set up a billing account (required even for free tier). 3. Create credentials (API key or service account). 4. Use client libraries or REST API to convert text to audio. 5. Configure voice settings (language, gender, voice type)."
+        },
+        {
+            "id": 10,
+            "timestamp": "01.10.2025 19:40",
+            "type": "general",
+            "content": "Step-by-step guide to set up Google Cloud Text-to-Speech API:\n1. Go to https://console.cloud.google.com/ and log in.\n2. Create a new project via project dropdown > NEW PROJECT.\n3. Open hamburger menu > APIs & Services > Library.\n4. Search and enable Cloud Text-to-Speech API.\n5. Go to APIs & Services > Credentials.\n6. Create credentials > Service account.\n7. Name it and finish creation.\n8. In the service account, add a JSON key and download it.\n9. Use this key in your app for authentication.\n10. Optionally set up billing under hamburger menu > Billing.\nThese instructions saved for future reference."
+        },
+        {
+            "id": 11,
+            "timestamp": "01.10.2025 23:55",
+            "type": "preference",
+            "content": "The voice named Enceladus is Tobias's favorite because it is the most similar to Jarvis from the Iron Man movies."
         }
     ]
 }
