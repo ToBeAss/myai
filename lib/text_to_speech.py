@@ -8,6 +8,8 @@ import time
 import json
 from datetime import datetime
 from pathlib import Path
+import threading
+import queue
 
 class TextToSpeech:
     """Text-to-speech handler using Google Cloud TTS with usage tracking."""
@@ -494,43 +496,188 @@ class TextToSpeech:
             print(f"❌ Error speaking text: {e}")
             return False
     
-    def speak_streaming(self, text_generator, chunk_on: str = "."):
+    def speak_streaming(self, text_generator, chunk_on: str = ".", print_text: bool = True):
         """
-        Speak text as it's being generated (streaming mode).
-        This accumulates text until a sentence boundary and speaks it.
+        Speak text as it's being generated (streaming mode) with parallel processing.
+        This accumulates text until a sentence boundary, then speaks it in a separate thread
+        while continuing to receive new tokens from the LLM.
         
         :param text_generator: Generator that yields text tokens
         :param chunk_on: Character to chunk on (default: "." for sentences)
+        :param print_text: If True, print the text as it's being spoken
         """
         buffer = ""
+        speech_queue = queue.Queue()
+        is_processing = threading.Event()
+        is_processing.set()  # Start as processing
         
-        for token in text_generator:
-            buffer += token.content
+        def speech_worker():
+            """Worker thread that speaks queued text chunks."""
+            while True:
+                item = speech_queue.get()
+                if item is None:  # Poison pill to stop the thread
+                    speech_queue.task_done()
+                    break
+                
+                text_to_speak = item
+                self.speak(text_to_speak, wait_until_done=True)
+                speech_queue.task_done()
+        
+        # Start the speech worker thread
+        speech_thread = threading.Thread(target=speech_worker, daemon=True)
+        speech_thread.start()
+        
+        try:
+            # Process tokens from the LLM
+            for token in text_generator:
+                if print_text:
+                    print(token.content, end="", flush=True)
+                buffer += token.content
+                
+                # Check if we have a complete sentence
+                if chunk_on in buffer:
+                    # Find the last occurrence of the chunk character
+                    last_chunk_idx = buffer.rfind(chunk_on)
+                    
+                    # Extract the complete sentence(s)
+                    to_speak = buffer[:last_chunk_idx + 1].strip()
+                    
+                    # Keep the remainder for the next iteration
+                    buffer = buffer[last_chunk_idx + 1:]
+                    
+                    # Queue the text for speaking (non-blocking)
+                    if to_speak:
+                        speech_queue.put(to_speak)
             
-            # Check if we have a complete sentence
-            if chunk_on in buffer:
-                # Find the last occurrence of the chunk character
-                last_chunk_idx = buffer.rfind(chunk_on)
+            # Speak any remaining text in the buffer
+            if buffer.strip():
+                speech_queue.put(buffer.strip())
+            
+            # Signal the worker to stop after finishing all queued items
+            speech_queue.put(None)
+            
+            # Wait for all speech to complete
+            speech_thread.join()
+            
+            if print_text:
+                print()  # New line at the end
                 
-                # Extract the complete sentence(s)
-                to_speak = buffer[:last_chunk_idx + 1].strip()
-                
-                # Keep the remainder for the next iteration
-                buffer = buffer[last_chunk_idx + 1:]
-                
-                # Speak the complete sentence(s)
-                if to_speak:
-                    # Print the text being spoken
-                    print(to_speak, end="", flush=True)
-                    # Speak it (non-blocking to continue receiving tokens)
-                    self.speak(to_speak, wait_until_done=True)
+        except Exception as e:
+            print(f"\n❌ Error in streaming speech: {e}")
+            speech_queue.put(None)  # Stop the worker
+            speech_thread.join()
+    
+    def speak_streaming_async(self, text_generator, chunk_on: str = ".", print_text: bool = True):
+        """
+        Speak text as it's being generated with truly parallel processing.
+        Multiple sentences can be synthesized and queued while others are playing.
+        This provides the fastest response time.
         
-        # Speak any remaining text in the buffer
-        if buffer.strip():
-            print(buffer.strip(), end="", flush=True)
-            self.speak(buffer.strip(), wait_until_done=True)
+        :param text_generator: Generator that yields text tokens
+        :param chunk_on: Character to chunk on (default: "." for sentences)
+        :param print_text: If True, print the text as it's being spoken
+        """
+        buffer = ""
+        synthesis_queue = queue.Queue()
+        playback_queue = queue.Queue()
         
-        print()  # New line at the end
+        def synthesis_worker():
+            """Worker thread that synthesizes speech."""
+            while True:
+                item = synthesis_queue.get()
+                if item is None:
+                    synthesis_queue.task_done()
+                    playback_queue.put(None)  # Signal playback worker
+                    break
+                
+                text_to_speak = item
+                try:
+                    # Create a temporary file for the audio
+                    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as temp_file:
+                        temp_filename = temp_file.name
+                    
+                    # Synthesize speech to the temp file
+                    audio_file = self.synthesize_to_file(text_to_speak, temp_filename)
+                    if audio_file:
+                        playback_queue.put(audio_file)
+                except Exception as e:
+                    print(f"\n❌ Synthesis error: {e}")
+                
+                synthesis_queue.task_done()
+        
+        def playback_worker():
+            """Worker thread that plays synthesized audio."""
+            while True:
+                audio_file = playback_queue.get()
+                if audio_file is None:
+                    playback_queue.task_done()
+                    break
+                
+                try:
+                    pygame.mixer.music.load(audio_file)
+                    pygame.mixer.music.play()
+                    
+                    # Wait for playback to finish
+                    while pygame.mixer.music.get_busy():
+                        time.sleep(0.1)
+                    
+                    # Clean up the temporary file
+                    try:
+                        os.remove(audio_file)
+                    except:
+                        pass
+                except Exception as e:
+                    print(f"\n❌ Playback error: {e}")
+                
+                playback_queue.task_done()
+        
+        # Start worker threads
+        synthesis_thread = threading.Thread(target=synthesis_worker, daemon=True)
+        playback_thread = threading.Thread(target=playback_worker, daemon=True)
+        synthesis_thread.start()
+        playback_thread.start()
+        
+        try:
+            # Process tokens from the LLM
+            for token in text_generator:
+                if print_text:
+                    print(token.content, end="", flush=True)
+                buffer += token.content
+                
+                # Check if we have a complete sentence
+                if chunk_on in buffer:
+                    # Find the last occurrence of the chunk character
+                    last_chunk_idx = buffer.rfind(chunk_on)
+                    
+                    # Extract the complete sentence(s)
+                    to_speak = buffer[:last_chunk_idx + 1].strip()
+                    
+                    # Keep the remainder for the next iteration
+                    buffer = buffer[last_chunk_idx + 1:]
+                    
+                    # Queue for synthesis (non-blocking)
+                    if to_speak:
+                        synthesis_queue.put(to_speak)
+            
+            # Process any remaining text
+            if buffer.strip():
+                synthesis_queue.put(buffer.strip())
+            
+            # Signal workers to stop
+            synthesis_queue.put(None)
+            
+            # Wait for all work to complete
+            synthesis_thread.join()
+            playback_thread.join()
+            
+            if print_text:
+                print()  # New line at the end
+                
+        except Exception as e:
+            print(f"\n❌ Error in async streaming speech: {e}")
+            synthesis_queue.put(None)
+            synthesis_thread.join()
+            playback_thread.join()
     
     def list_available_voices(self, language_code: Optional[str] = None, show_pricing: bool = True):
         """

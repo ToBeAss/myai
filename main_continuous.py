@@ -88,17 +88,10 @@ def handle_voice_command(command_text):
     
     print(f"\n👤: {command_text}")
     
-    # Collect the full response first, then speak it
+    # Stream the response with real-time TTS (speaks as it generates)
     print("🤖: ", end="", flush=True)
-    full_response = ""
-    for token in myai.stream(user_input=command_text):
-        sys.stdout.write(token.content)
-        sys.stdout.flush()
-        full_response += token.content
-    print("\n")
-    
-    # Speak the full response
-    tts.speak(full_response)
+    tts.speak_streaming_async(myai.stream(user_input=command_text), print_text=True)
+    print()
     
     # Enter conversation mode to allow follow-up questions
     stt.enter_conversation_mode()
@@ -164,17 +157,10 @@ while True:
                     print("🔇 No speech detected. Please try again.")
                     continue
                 
-                # Use the agent to process the input and stream a response
+                # Stream the response with real-time TTS (speaks as it generates)
                 print("🤖: ", end="", flush=True)
-                full_response = ""
-                for token in myai.stream(user_input=user_input):
-                    sys.stdout.write(token.content)
-                    sys.stdout.flush()
-                    full_response += token.content
+                tts.speak_streaming_async(myai.stream(user_input=user_input), print_text=True)
                 print()
-                
-                # Speak the response
-                tts.speak(full_response)
             break
         
         else:
