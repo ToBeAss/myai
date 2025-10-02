@@ -9,8 +9,6 @@ class Tool:
     GENERAL_TOOL_INSTRUCTIONS = """
     You have access to tools that help you perform tasks. Follow these rules carefully:
 
-    - 📌 Choose tool: ALWAYS explain BEFORE you call a tool WHY you plan to use it. DO NOT write more than 1 sentence.
-
     - 📞 Tool call: ALWAYS create a tool call when you say you are going to use a tool.
 
     - 🛠 Use tools: If a parameter is MARKED as REQUIRED, you MUST fill it out. If you don't have a value, you should ask the user first.

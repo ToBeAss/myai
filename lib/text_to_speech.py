@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 import threading
 import queue
+import re
 
 class TextToSpeech:
     """Text-to-speech handler using Google Cloud TTS with usage tracking."""
@@ -142,6 +143,119 @@ class TextToSpeech:
                     return tier
         # Default to standard if no pattern matches
         return 'standard'
+    
+    def _is_sentence_boundary(self, text: str, position: int) -> bool:
+        """
+        Check if a period at the given position is a true sentence boundary.
+        Handles common abbreviations and edge cases.
+        
+        :param text: The full text
+        :param position: Position of the period to check
+        :return: True if it's a sentence boundary, False otherwise
+        """
+        if position < 0 or position >= len(text):
+            return False
+        
+        # Get context around the period
+        before = text[:position]
+        after = text[position + 1:] if position + 1 < len(text) else ""
+        
+        # Check for numbers with decimals FIRST (e.g., "3.14" or "3. 14")
+        # This handles both "3.14" and streaming case "3." followed later by "14"
+        # MUST check before the "empty after" check because in streaming "3." has empty after
+        # Check if character before the period is a digit
+        if position > 0 and text[position - 1].isdigit():
+            # Check if next is digit (handles "3.14")
+            if after and after[0].isdigit():
+                return False
+            # Check if next is space then digit (handles streaming "3. 14")
+            if re.match(r'^\s*\d', after):
+                return False
+            # In streaming, if we have "3." with nothing after, DON'T treat as boundary yet
+            # This prevents chunking "3." before the decimal digits arrive
+            if not after:
+                return False
+        
+        # Check for common abbreviations (single letter + period)
+        # e.g., "J.", "M.", etc. - check character BEFORE the period
+        if position > 0 and text[position - 1].isupper() and text[position - 1].isalpha():
+            # Check if there's a word boundary before the letter (space or start of string)
+            if position == 1 or not text[position - 2].isalnum():
+                # Check if next character is uppercase (likely part of name like "J. Trump")
+                if after and after[0].isupper():
+                    return False
+                # Check if it's space + uppercase (streaming case: "J. T" when "Trump" hasn't arrived yet)
+                if after and len(after) >= 2 and after[0].isspace() and after[1].isupper():
+                    return False
+                # In streaming, we might get "J." with nothing after yet
+                # If after is empty or only whitespace, be cautious - don't chunk yet
+                if not after or after.isspace():
+                    return False
+        
+        # If nothing comes after, it's a sentence end
+        if not after:
+            return True
+        
+        # Common titles and abbreviations
+        # Check the text UP TO AND INCLUDING this period
+        text_with_period = text[:position + 1]
+        common_abbrevs = [
+            r'\bDr\.$', r'\bMr\.$', r'\bMrs\.$', r'\bMs\.$',
+            r'\bJr\.$', r'\bSr\.$', r'\bProf\.$', r'\bGen\.$',
+            r'\bCol\.$', r'\bCapt\.$', r'\bLt\.$', r'\bSgt\.$',
+            r'\bRev\.$', r'\bHon\.$', r'\bSt\.$', r'\bAve\.$',
+            r'\bDept\.$', r'\bUniv\.$', r'\bInc\.$', r'\bLtd\.$',
+            r'\bCo\.$', r'\bCorp\.$', r'\betc\.$', r'\bvs\.$',
+            r'\be\.g\.$', r'\bi\.e\.$', r'\bviz\.$', r'\bal\.$',
+            r'\bU\.S\.$', r'\bU\.K\.$', r'\bD\.C\.$'
+        ]
+        
+        for abbrev_pattern in common_abbrevs:
+            if re.search(abbrev_pattern, text_with_period, re.IGNORECASE):
+                return False
+        
+        # Check if next word starts with lowercase (likely continuation)
+        next_word_match = re.match(r'^(\s+)([a-z])', after)
+        if next_word_match:
+            return False
+        
+        # Check for ellipsis patterns
+        if before.endswith('..') or after.startswith('..'):
+            return False
+        
+        # If we made it here and next character is uppercase or space+uppercase, 
+        # it's likely a sentence boundary
+        if after and (after[0].isupper() or (after[0] == ' ' and len(after) > 1 and after[1].isupper())):
+            return True
+        
+        # Default: treat as sentence boundary if followed by space and not obviously wrong
+        return bool(re.match(r'^\s+[A-Z]', after))
+    
+    def _find_sentence_boundary(self, text: str, chunk_chars: str = ".!?") -> int:
+        """
+        Find the position of the last valid sentence boundary in text.
+        
+        :param text: Text to search
+        :param chunk_chars: Characters that could indicate sentence boundaries
+        :return: Position of last sentence boundary, or -1 if none found
+        """
+        last_valid_boundary = -1
+        
+        # Find all potential boundaries
+        for i, char in enumerate(text):
+            if char in chunk_chars:
+                # For periods, check if it's a real sentence boundary
+                if char == '.':
+                    if self._is_sentence_boundary(text, i):
+                        last_valid_boundary = i
+                else:
+                    # ! and ? are almost always sentence boundaries
+                    # But check for emoticons and multiple punctuation
+                    if i > 0 and text[i-1] in '!?':
+                        continue  # Skip repeated punctuation
+                    last_valid_boundary = i
+        
+        return last_valid_boundary
     
     def _load_usage(self) -> dict:
         """Load usage data from file."""
@@ -496,7 +610,8 @@ class TextToSpeech:
             print(f"❌ Error speaking text: {e}")
             return False
     
-    def speak_streaming(self, text_generator, chunk_on: str = ".", print_text: bool = True):
+    def speak_streaming(self, text_generator, chunk_on: str = ".", print_text: bool = True, 
+                       min_chunk_size: int = 20):
         """
         Speak text as it's being generated (streaming mode) with parallel processing.
         This accumulates text until a sentence boundary, then speaks it in a separate thread
@@ -505,6 +620,7 @@ class TextToSpeech:
         :param text_generator: Generator that yields text tokens
         :param chunk_on: Character to chunk on (default: "." for sentences)
         :param print_text: If True, print the text as it's being spoken
+        :param min_chunk_size: Minimum characters before considering a chunk (prevents tiny fragments)
         """
         buffer = ""
         speech_queue = queue.Queue()
@@ -534,20 +650,23 @@ class TextToSpeech:
                     print(token.content, end="", flush=True)
                 buffer += token.content
                 
-                # Check if we have a complete sentence
-                if chunk_on in buffer:
-                    # Find the last occurrence of the chunk character
-                    last_chunk_idx = buffer.rfind(chunk_on)
+                # Check if we have potential sentence boundaries
+                if any(c in buffer for c in chunk_on):
+                    # Find the last valid sentence boundary
+                    last_chunk_idx = self._find_sentence_boundary(buffer, chunk_on)
                     
-                    # Extract the complete sentence(s)
-                    to_speak = buffer[:last_chunk_idx + 1].strip()
-                    
-                    # Keep the remainder for the next iteration
-                    buffer = buffer[last_chunk_idx + 1:]
-                    
-                    # Queue the text for speaking (non-blocking)
-                    if to_speak:
-                        speech_queue.put(to_speak)
+                    if last_chunk_idx >= 0:
+                        # Extract the complete sentence(s)
+                        to_speak = buffer[:last_chunk_idx + 1].strip()
+                        
+                        # Only chunk if we have substantial content (prevents tiny fragments)
+                        # This ensures we don't speak very short incomplete phrases
+                        if len(to_speak) >= min_chunk_size:
+                            # Keep the remainder for the next iteration
+                            buffer = buffer[last_chunk_idx + 1:]
+                            
+                            # Queue the text for speaking (non-blocking)
+                            speech_queue.put(to_speak)
             
             # Speak any remaining text in the buffer
             if buffer.strip():
@@ -567,7 +686,8 @@ class TextToSpeech:
             speech_queue.put(None)  # Stop the worker
             speech_thread.join()
     
-    def speak_streaming_async(self, text_generator, chunk_on: str = ".", print_text: bool = True):
+    def speak_streaming_async(self, text_generator, chunk_on: str = ".", print_text: bool = True,
+                              min_chunk_size: int = 20):
         """
         Speak text as it's being generated with truly parallel processing.
         Multiple sentences can be synthesized and queued while others are playing.
@@ -576,6 +696,7 @@ class TextToSpeech:
         :param text_generator: Generator that yields text tokens
         :param chunk_on: Character to chunk on (default: "." for sentences)
         :param print_text: If True, print the text as it's being spoken
+        :param min_chunk_size: Minimum characters before considering a chunk (prevents tiny fragments)
         """
         buffer = ""
         synthesis_queue = queue.Queue()
@@ -644,20 +765,23 @@ class TextToSpeech:
                     print(token.content, end="", flush=True)
                 buffer += token.content
                 
-                # Check if we have a complete sentence
-                if chunk_on in buffer:
-                    # Find the last occurrence of the chunk character
-                    last_chunk_idx = buffer.rfind(chunk_on)
+                # Check if we have potential sentence boundaries
+                if any(c in buffer for c in chunk_on):
+                    # Find the last valid sentence boundary
+                    last_chunk_idx = self._find_sentence_boundary(buffer, chunk_on)
                     
-                    # Extract the complete sentence(s)
-                    to_speak = buffer[:last_chunk_idx + 1].strip()
-                    
-                    # Keep the remainder for the next iteration
-                    buffer = buffer[last_chunk_idx + 1:]
-                    
-                    # Queue for synthesis (non-blocking)
-                    if to_speak:
-                        synthesis_queue.put(to_speak)
+                    if last_chunk_idx >= 0:
+                        # Extract the complete sentence(s)
+                        to_speak = buffer[:last_chunk_idx + 1].strip()
+                        
+                        # Only chunk if we have substantial content (prevents tiny fragments)
+                        # This ensures we don't speak very short incomplete phrases
+                        if len(to_speak) >= min_chunk_size:
+                            # Keep the remainder for the next iteration
+                            buffer = buffer[last_chunk_idx + 1:]
+                            
+                            # Queue for synthesis (non-blocking)
+                            synthesis_queue.put(to_speak)
             
             # Process any remaining text
             if buffer.strip():

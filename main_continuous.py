@@ -13,7 +13,7 @@ from tools import (
 
 # Description of the agent's purpose
 description = """
-You are a clever, helpful AI assistant designed to assist the user, Tobias, with various tasks.
+You are a clever, helpful AI assistant designed to assist the user, Tobias, with various tasks. Your name is Sam.
 """
 
 # Initialize the agent
@@ -41,17 +41,27 @@ tts = TextToSpeech(
 )
 
 # Configure wake words (you can customize these)
-stt.set_wake_words(["hey myai", "hey assistant", "computer", "jarvis"])
+stt.set_wake_words(["sam", "samantha"])
 
 # Set conversation timeout (how long to wait for follow-up questions)
 stt.set_conversation_timeout(5.0)  # 5 seconds to ask follow-up questions
 
 # Give the agent instructions on how to behave
-myai.add_instruction("Always respond in english.")
-myai.add_instruction("Be concise and to the point.")
+myai.add_instruction("Always respond in English.")
 myai.add_instruction("Use any available tools to assist with tasks.")
 myai.add_instruction("If you don't know the answer, say 'I don't know' instead of making up an answer.")
-myai.add_instruction("Use emojis to make the conversation more engaging.")
+
+# Voice-optimized response style
+myai.add_instruction("Keep responses conversational and natural for voice output. Use complete sentences that flow well when spoken aloud.")
+myai.add_instruction("Avoid excessive punctuation, special characters, or formatting that doesn't translate well to speech (like asterisks, underscores, or markdown).")
+myai.add_instruction("Break complex information into clear, digestible statements. Pause between ideas using periods.")
+
+# Clarity and pronunciation
+myai.add_instruction("When mentioning abbreviations, acronyms, or technical terms, consider spelling them out or providing context (e.g., 'U.S.' or 'United States').")
+myai.add_instruction("For numbers and measurements, use natural phrasing (e.g., 'three point fourteen' rather than just '3.14').")
+
+# Conciseness for audio
+myai.add_instruction("Be concise but complete. Voice listeners can't skim, so get to the point while being thorough.")
 
 # Give the agent tools to work with
 myai.add_tool(read_from_memory_tool_blueprint.create_tool())
@@ -89,6 +99,7 @@ def handle_voice_command(command_text):
     print(f"\n👤: {command_text}")
     
     # Stream the response with real-time TTS (speaks as it generates)
+    # min_chunk_size=30 prevents tiny fragments like "3." from being spoken alone
     print("🤖: ", end="", flush=True)
     tts.speak_streaming_async(myai.stream(user_input=command_text), print_text=True)
     print()
@@ -159,7 +170,7 @@ while True:
                 
                 # Stream the response with real-time TTS (speaks as it generates)
                 print("🤖: ", end="", flush=True)
-                tts.speak_streaming_async(myai.stream(user_input=user_input), print_text=True)
+                tts.speak_streaming_async(myai.stream(user_input=user_input), print_text=True, min_chunk_size=30)
                 print()
             break
         

@@ -65,6 +65,24 @@
             "timestamp": "01.10.2025 23:55",
             "type": "preference",
             "content": "The voice named Enceladus is Tobias's favorite because it is the most similar to Jarvis from the Iron Man movies."
+        },
+        {
+            "id": 12,
+            "timestamp": "02.10.2025 02:27",
+            "type": "project",
+            "content": "The Google Text-to-Speech functionality in the 'myai' project is complete."
+        },
+        {
+            "id": 13,
+            "timestamp": "02.10.2025 02:36",
+            "type": "preference",
+            "content": "Updated Tobias's favorite voice for the text-to-speech feature to the Arch Rachernar. This is the current voice being used for the AI assistant."
+        },
+        {
+            "id": 14,
+            "timestamp": "02.10.2025 02:37",
+            "type": "preference",
+            "content": "Updated the favorite voice for the text-to-speech feature to 'Achernar.' This voice belongs to the AI model named Samantha, not Tobias, the user."
         }
     ]
 }
