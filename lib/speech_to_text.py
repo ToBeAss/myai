@@ -63,6 +63,50 @@ class SpeechToText:
             print(f"❌ Error loading Whisper model: {e}")
             raise
     
+    def is_hallucination(self, text: str) -> bool:
+        """
+        Detect if transcribed text is likely a Whisper hallucination.
+        
+        Whisper sometimes hallucinates repetitive patterns when processing background noise.
+        Common patterns include repeated numbers, percentages, or short phrases.
+        
+        :param text: Transcribed text to check
+        :return: True if text appears to be a hallucination
+        """
+        if not text or len(text.strip()) < 3:
+            return True
+            
+        text = text.strip().lower()
+        
+        # Check for very short repetitive patterns
+        words = text.split()
+        
+        # If more than 50% of words are identical, likely hallucination
+        if len(words) > 2:
+            word_counts = {}
+            for word in words:
+                word_counts[word] = word_counts.get(word, 0) + 1
+            max_count = max(word_counts.values())
+            if max_count / len(words) > 0.5:
+                print(f"🚫 Detected hallucination: Repetitive pattern ('{words[0]}' repeated {max_count} times)")
+                return True
+        
+        # Check for repeated short sequences (like "1.5% 1.5% 1.5%")
+        # Split into chunks of 2-3 words and check for repetition
+        if len(words) >= 4:
+            chunk_size = 2
+            chunks = [' '.join(words[i:i+chunk_size]) for i in range(0, len(words)-chunk_size+1, chunk_size)]
+            if len(set(chunks)) == 1 and len(chunks) >= 2:
+                print(f"🚫 Detected hallucination: Repeated sequence ('{chunks[0]}')")
+                return True
+        
+        # Check for suspiciously short transcriptions with very low diversity
+        if len(text) < 15 and len(set(text.replace(' ', ''))) < 5:
+            print(f"🚫 Detected hallucination: Low character diversity in short text")
+            return True
+            
+        return False
+    
     def record_audio(self, duration: Optional[int] = None) -> str:
         """
         Record audio from microphone and return the file path.
@@ -373,6 +417,11 @@ class SpeechToText:
             print(f"🌍 Detected language: {language_display} ({detected_language})")
             print(f"✅ Transcription completed: '{transcribed_text}'")
             
+            # Check for hallucinations (Whisper's tendency to generate repetitive text from noise)
+            if self.is_hallucination(transcribed_text):
+                print("⚠️ Transcription appears to be a hallucination, discarding...")
+                transcribed_text = ""
+            
         except Exception as e:
             print(f"❌ Transcription error: {e}")
             print(f"❌ Error type: {type(e).__name__}")
@@ -582,7 +631,7 @@ class SpeechToText:
                                 # CRITICAL: Mark speech processing as active immediately for conversation timer
                                 self.speech_being_processed = True
                                 
-                                # If we're in conversation mode, update activity since speech started
+                                # If we're in conversation mode, notify once at the start
                                 if self.in_conversation:
                                     self.update_conversation_activity()
                         
@@ -633,10 +682,7 @@ class SpeechToText:
         temp_filename = None
         try:
             # Note: speech_being_processed is already set to True when speech was first detected
-            
-            # If we're in conversation mode, update activity time since speech was detected
-            if self.in_conversation:
-                self.update_conversation_activity()
+            # Note: update_conversation_activity() was already called when speech was first detected
             
             # Create temporary audio file
             import uuid
@@ -654,6 +700,14 @@ class SpeechToText:
             audio_data = self.load_audio_data(temp_filename)
             result = self.model.transcribe(audio_data, language=self.preferred_language)
             transcribed_text = result["text"].strip().lower()
+            
+            # Check for hallucinations early to avoid processing noise
+            if self.is_hallucination(transcribed_text):
+                print("⚠️ Transcription appears to be a hallucination from background noise, ignoring...")
+                # If we're in conversation mode, exit it since this is just noise
+                if self.in_conversation:
+                    self.exit_conversation_mode()
+                return
             
             # If we're in conversation mode, treat any speech as a command
             if self.in_conversation:
@@ -708,10 +762,7 @@ class SpeechToText:
             print(f"❌ Error processing speech chunk: {e}")
         
         finally:
-            # Mark that speech processing is complete
-            self.speech_being_processed = False
-            
-            # Clean up - always try to remove the file
+            # Clean up - always try to remove the file BEFORE marking processing complete
             if temp_filename:
                 for attempt in range(3):  # Try up to 3 times
                     try:
@@ -724,9 +775,19 @@ class SpeechToText:
                             print(f"⚠️ Could not clean up wake audio file after 3 attempts: {cleanup_error}")
                         else:
                             time.sleep(0.2)  # Wait before retry
+            
+            # Mark that speech processing is complete (do this LAST)
+            self.speech_being_processed = False
 
     def start_conversation_timer(self):
         """Start a simple conversation timer that pauses when speech is detected."""
+        # If a timer is already running, don't start a new one
+        if hasattr(self, 'conversation_timer_thread') and self.conversation_timer_thread and self.conversation_timer_thread.is_alive():
+            # Timer already running, just ensure we're in conversation mode
+            if not self.in_conversation:
+                self.in_conversation = True
+            return
+        
         # Stop any existing timer first
         if hasattr(self, 'stop_timer_flag'):
             self.stop_timer_flag = True
@@ -737,13 +798,18 @@ class SpeechToText:
         def simple_conversation_timer():
             print(f"🕐 Conversation timer started - {self.conversation_timeout}s for follow-up questions")
             timeout_start_time = time.time()
+            timer_was_paused = False  # Track if we've already paused this cycle
             
             while self.in_conversation and not self.stop_timer_flag:
                 current_time = time.time()
                 
                 # If speech is being processed, completely pause the timer
                 if self.speech_being_processed:
-                    print("⏸️ Timer paused - speech being processed")
+                    # Only print pause message once per pause cycle
+                    if not timer_was_paused:
+                        print("⏸️ Timer paused - speech being processed")
+                        timer_was_paused = True
+                    
                     # Wait for speech processing to complete
                     while self.speech_being_processed and self.in_conversation and not self.stop_timer_flag:
                         time.sleep(0.1)
@@ -752,6 +818,9 @@ class SpeechToText:
                     if self.in_conversation and not self.stop_timer_flag:
                         print(f"▶️ Timer restarted - {self.conversation_timeout}s for follow-up questions")
                         timeout_start_time = time.time()
+                        timer_was_paused = False  # Reset for next pause cycle
+                        # Small delay to ensure we don't immediately catch the flag changing again
+                        time.sleep(0.3)
                     continue
                 
                 # Check if timeout has been reached

@@ -83,6 +83,18 @@
             "timestamp": "02.10.2025 02:37",
             "type": "preference",
             "content": "Updated the favorite voice for the text-to-speech feature to 'Achernar.' This voice belongs to the AI model named Samantha, not Tobias, the user."
+        },
+        {
+            "id": 15,
+            "timestamp": "02.10.2025 02:53",
+            "type": "preference",
+            "content": "Tips for dream journaling: 1. Keep your journal and pen by your bed to write down dreams immediately upon waking. 2. Jot down keywords or simple phrases instead of full stories. 3. Write in the journal daily, even if no dream is recalled. 4. Add drawings or symbols related to dreams for creativity. 5. Be patient, dream recall improves gradually with practice."
+        },
+        {
+            "id": 16,
+            "timestamp": "02.10.2025 11:31",
+            "type": "project",
+            "content": "Suggested additions for AI assistant project: enhance natural language understanding for smoother conversations, add proactive suggestions based on user habits or context, integrate voice emotion recognition for empathetic responses, support multi-language capabilities, and offer personalized learning with adaptive responses based on user feedback."
         }
     ]
 }

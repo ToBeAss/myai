@@ -23,9 +23,9 @@ class TextToSpeech:
             'price_per_million': 4.00  # USD (after free tier)
         },
         'wavenet': {
-            'free_chars': 1_000_000,  # 1 million characters per month
+            'free_chars': 4_000_000,  # 4 million characters per month
             'patterns': ['WaveNet'],
-            'price_per_million': 16.00  # USD (after free tier)
+            'price_per_million': 4.00  # USD (after free tier)
         },
         'neural2': {
             'free_chars': 1_000_000,  # 1 million characters per month
@@ -33,25 +33,22 @@ class TextToSpeech:
             'price_per_million': 16.00  # USD (after free tier)
         },
         'studio': {
-            'free_chars': 100_000,  # 100k characters per month
+            'free_chars': 1_000_000,  # 1 million characters per month
             'patterns': ['Studio'],
             'price_per_million': 160.00  # USD (after free tier)
         },
-        'journey': {
-            'free_chars': 100_000,  # 100k characters per month
-            'patterns': ['Journey'],
-            'price_per_million': 100.00  # USD (after free tier)
-        },
         'chirp': {
-            'free_chars': 100_000,  # 100k characters per month
+            'free_chars': 1_000_000,  # 1 million characters per month (Chirp3-HD: cutting-edge LLM-powered TTS)
             'patterns': ['Chirp', 'Chirp3'],
-            'price_per_million': 100.00  # USD (after free tier)
+            'price_per_million': 30.00  # USD (after free tier)
         },
         'polyglot': {
-            'free_chars': 100_000,  # 100k characters per month
+            'free_chars': 1_000_000,  # 1 million characters per month (Preview)
             'patterns': ['Polyglot'],
-            'price_per_million': 100.00  # USD (after free tier)
-        }
+            'price_per_million': 16.00  # USD (after free tier)
+        },
+        # Note: Journey voices not listed - may not have free tier or are deprecated
+        # Excluded: Instant custom voice, Gemini 2.5 Flash TTS, Gemini 2.5 Pro TTS (no free tier)
     }
     
     def __init__(self, voice_name: str = "en-US-Standard-A", language_code: str = "en-US", 
