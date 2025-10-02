@@ -21,13 +21,14 @@ from tools import (
 
 # Description of the agent's purpose
 description = """
-You are a clever, helpful AI assistant designed to assist the user, Tobias, with various tasks. Your name is Sam.
+You are a clever, helpful AI assistant designed to assist the user, Tobias, with various tasks. 
+Your name is Sam, which you chose yourself. It could be short for Samantha, but it also works as an acronym for Smart Assistant Manager.
 """
 
 # Initialize the agent
 llm = LLM_Wrapper(model_name="openai-gpt-4.1-mini")
 memory = Memory(history_limit=10)
-myai = Agent(llm=llm, memory=memory, agent_name="MyAI", description=description)
+myai = Agent(llm=llm, memory=memory, agent_name="Sam", description=description)
 
 # Initialize speech-to-text system
 print("🔧 Initializing speech-to-text system...")
@@ -42,11 +43,12 @@ tts = TextToSpeech(
     speaking_rate=1.1,
     pitch=0.0,
     enforce_free_tier=True,  # Stay within free tier
-    fallback_voice="en-GB-Standard-A"  # Fallback to Standard voice (4M free chars/month)
+    fallback_voice="en-GB-Wavenet-A"  # Fallback to Wavenet voice (4M free chars/month)
 )
 
 # Configure wake words (you can customize these)
-stt.set_wake_words(["sam", "samantha"])
+wake_words = ["sam", "samantha"]
+stt.set_wake_words(wake_words)
 
 # Set conversation timeout (how long to wait for follow-up questions)
 stt.set_conversation_timeout(5.0)  # 5 seconds to ask follow-up questions
@@ -103,10 +105,12 @@ def handle_voice_command(command_text):
     
     print(f"\n👤: {command_text}")
     
+    # Generate the response
+    response_generator = myai.stream(user_input=command_text)
+    
     # Stream the response with real-time TTS (speaks as it generates)
-    # min_chunk_size=30 prevents tiny fragments like "3." from being spoken alone
     print("🤖: ", end="", flush=True)
-    tts.speak_streaming_async(myai.stream(user_input=command_text), print_text=True)
+    tts.speak_streaming_async(response_generator, print_text=True)
     print()
     
     # Enter conversation mode to allow follow-up questions
@@ -115,7 +119,7 @@ def handle_voice_command(command_text):
 
 # Start continuous listening mode
 print("\n🎙️ Voice-activated AI assistant ready!")
-print("\n� Starting continuous listening mode (hands-free)...")
+print("\n🎧 Starting continuous listening mode (hands-free)...")
 print("💡 Say one of the wake words followed by your question:")
 print(f"   - 'Sam, what's the weather?'")
 print(f"   - 'How is the forecast looking, Sam?'")

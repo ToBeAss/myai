@@ -14,6 +14,7 @@ import urllib.request
 import json
 from datetime import datetime
 import warnings
+import webrtcvad
 
 # Suppress the FP16 warning - it's expected behavior on CPU
 warnings.filterwarnings("ignore", message="FP16 is not supported on CPU; using FP32 instead")
@@ -214,7 +215,9 @@ class SpeechToText:
                  confidence_threshold: int = None,
                  confidence_mode: str = "balanced",
                  track_metrics: bool = True,
-                 false_positive_timeout: float = 10.0):
+                 false_positive_timeout: float = 10.0,
+                 enable_vad: bool = True,
+                 vad_aggressiveness: int = 2):
         """
         Initialize the speech-to-text system.
         
@@ -225,6 +228,8 @@ class SpeechToText:
         :param confidence_mode: Preset mode - "strict" (80), "balanced" (60), "flexible" (40)
         :param track_metrics: Enable analytics tracking for TP/FP/FN
         :param false_positive_timeout: Seconds to wait for user engagement to detect FP
+        :param enable_vad: Enable WebRTC Voice Activity Detection for noise filtering
+        :param vad_aggressiveness: VAD filtering level (0=liberal, 1=moderate, 2=balanced, 3=aggressive)
         """
         print(f"🎤 Loading Whisper '{model_size}' model... This might take a moment on first run.")
         try:
@@ -284,8 +289,22 @@ class SpeechToText:
             self.last_activation_time = 0
             self.waiting_for_engagement = False
             
+            # Initialize WebRTC Voice Activity Detection
+            self.enable_vad = enable_vad
+            self.vad = None
+            self.vad_frame_duration = 30  # ms (10, 20, or 30 supported by WebRTC VAD)
+            self.vad_frame_size = int(self.rate * self.vad_frame_duration / 1000)
+            
+            if enable_vad:
+                try:
+                    self.vad = webrtcvad.Vad(vad_aggressiveness)
+                    print(f"🎯 Voice Activity Detection: ENABLED (aggressiveness: {vad_aggressiveness}/3)")
+                except Exception as e:
+                    print(f"⚠️ Could not initialize VAD: {e}. Continuing without VAD...")
+                    self.enable_vad = False
+            
             print("✅ Speech-to-text system ready!")
-            print("�🇧 Language: English only (for optimal accuracy)")
+            print("🇬🇧 Language: English only (for optimal accuracy)")
             
             if flexible_wake_word:
                 print(f"🎯 Flexible wake word: ENABLED (wake word can be anywhere in sentence)")
@@ -333,11 +352,11 @@ class SpeechToText:
                 print(f"🚫 Detected hallucination: Repeated sequence ('{chunks[0]}')")
                 return True
         
-        # Check for suspiciously short transcriptions with very low diversity
-        if len(text) < 15 and len(set(text.replace(' ', ''))) < 5:
-            print(f"🚫 Detected hallucination: Low character diversity in short text")
-            return True
-            
+        # Note: We don't filter short transcriptions here because:
+        # 1. Whisper has already run (no processing savings)
+        # 2. Short speech like "Sam", "hey", "hello" is legitimate
+        # 3. Wake word detection handles validation
+        
         return False
     
     def calculate_confidence_score(self, transcription: str, wake_word: str, position: int) -> int:
@@ -559,11 +578,20 @@ class SpeechToText:
         if sentence_endings >= 1:
             score += 10
         
-        # 6. SPECIAL CASE: Just wake word alone (user calling the assistant)
-        # This is a common and valid use case - user says "Sam" to get attention
-        words_without_wake_word = [w for w in text_lower.split() if w not in self.wake_words]
-        if len(words_without_wake_word) <= 1:  # Only wake word (or wake word + one filler word like "hey")
-            score += 20  # Boost to ensure it passes threshold
+        # 6. SPECIAL CASE: Very short transcriptions with wake word (user calling assistant)
+        # This is a common and valid use case - user says "Sam", "hey Sam", etc.
+        # Be generous with scoring for short, direct wake word usage
+        words = text_lower.split()
+        words_without_wake_word = [w for w in words if w not in self.wake_words]
+        
+        # Filter out common filler/greeting words that often accompany wake words
+        filler_words = ['hey', 'hi', 'hello', 'a', 'uh', 'um', 'okay', 'ok']
+        meaningful_words = [w for w in words_without_wake_word if w not in filler_words]
+        
+        if len(meaningful_words) <= 1:  # Just wake word + maybe hey/hi/filler
+            # Very short, direct wake word usage - should almost always pass
+            score += 30  # Increased boost to ensure it passes threshold (55)
+            # This ensures even position 6 wake words like "a hey sam" will score ~70+
         
         # 7. BONUS: Wake word at end with question mark (natural question format)
         if transcription.strip().endswith(wake_word + '?') or transcription.strip().endswith(wake_word):
@@ -1012,6 +1040,36 @@ class SpeechToText:
         if self.track_metrics and self.metrics:
             self.metrics.print_report()
 
+    def _is_speech_vad(self, audio_frame: bytes) -> bool:
+        """
+        Check if audio frame contains speech using WebRTC VAD.
+        
+        :param audio_frame: Raw audio bytes from pyaudio stream
+        :return: True if speech detected, False otherwise
+        """
+        if not self.enable_vad or self.vad is None:
+            # VAD disabled, assume all audio might be speech
+            return True
+        
+        try:
+            # WebRTC VAD requires specific frame sizes (10, 20, or 30ms)
+            # Calculate required frame size in bytes (16-bit = 2 bytes per sample)
+            frame_size_bytes = self.vad_frame_size * 2
+            
+            if len(audio_frame) < frame_size_bytes:
+                # Frame too small, can't process
+                return False
+            
+            # Take only the exact frame size needed for VAD
+            frame = audio_frame[:frame_size_bytes]
+            
+            # VAD returns True if speech is detected in the frame
+            return self.vad.is_speech(frame, self.rate)
+        except Exception as e:
+            # If VAD fails for any reason, default to True to avoid missing speech
+            # This ensures the system degrades gracefully
+            return True
+
     def _continuous_listen_loop(self):
         """Main loop for continuous listening."""
         try:
@@ -1031,13 +1089,17 @@ class SpeechToText:
             buffer_duration = 5.0  # Increased from 3 to 5 seconds
             buffer_size = int(self.rate * buffer_duration / self.chunk)
             
-            silence_threshold = 300  # Lowered threshold for better sensitivity
+            silence_threshold = 300  # Lower threshold OK since VAD does the smart filtering
             speech_detected = False
             speech_frames = []
             silence_count = 0
             speech_start_time = 0  # Track when speech recording started
             last_speech_time = 0  # Track when we last processed speech
             max_speech_duration = 60.0  # Maximum recording duration in seconds (failsafe for noisy environments)
+            
+            # VAD consecutive frame tracking
+            vad_speech_frames = 0
+            vad_required_frames = 3  # Require 3 consecutive speech frames to confirm speech
             
             while self.is_listening:
                 try:
@@ -1053,37 +1115,62 @@ class SpeechToText:
                     if len(audio_buffer) > buffer_size:
                         audio_buffer.pop(0)
                     
-                    # Detect speech activity
+                    # Detect speech activity with two-stage filtering
                     current_time = time.time()
+                    
+                    # STAGE 1: Volume check (fast pre-filter)
                     if volume > silence_threshold:
-                        if not speech_detected:
-                            # Only start new speech detection if enough time has passed since last speech
-                            if current_time - last_speech_time > 2.0:  # 2 second gap required
-                                speech_detected = True
-                                speech_start_time = current_time  # Track when recording started
-                                speech_frames = audio_buffer.copy()  # Include pre-speech audio
-                                print("🎤 Speech detected, recording...")
-                                
-                                # CRITICAL: Mark speech processing as active immediately for conversation timer
-                                self.speech_being_processed = True
-                                
-                                # If we're in conversation mode, notify once at the start
-                                if self.in_conversation:
-                                    self.update_conversation_activity()
+                        # STAGE 2: VAD check (accurate speech detection)
+                        is_speech = self._is_speech_vad(data)
                         
-                        if speech_detected:
-                            speech_frames.append(data)
-                            silence_count = 0
-                            
-                            # Check if recording has gone on too long
-                            if current_time - speech_start_time > max_speech_duration:
-                                print("⏱️ Maximum recording duration reached, processing speech...")
-                                self._process_speech_chunk(speech_frames)
+                        if is_speech:
+                            vad_speech_frames += 1
+                        else:
+                            vad_speech_frames = 0
+                            # Reset speech detection if VAD says not speech (e.g., door slam, keyboard)
+                            if speech_detected and silence_count == 0:
+                                # Just started recording but VAD confirms it's not speech
                                 speech_detected = False
                                 speech_frames = []
+                        
+                        # Only proceed if we have enough consecutive VAD-confirmed speech frames
+                        if vad_speech_frames >= vad_required_frames:
+                            if not speech_detected:
+                                # Only start new speech detection if enough time has passed since last speech
+                                if current_time - last_speech_time > 2.0:  # 2 second gap required
+                                    speech_detected = True
+                                    speech_start_time = current_time  # Track when recording started
+                                    speech_frames = audio_buffer.copy()  # Include pre-speech audio
+                                    
+                                    if self.enable_vad:
+                                        print("🎤 Speech detected (VAD confirmed), recording...")
+                                    else:
+                                        print("🎤 Speech detected, recording...")
+                                    
+                                    # CRITICAL: Mark speech processing as active immediately for conversation timer
+                                    self.speech_being_processed = True
+                                    
+                                    # If we're in conversation mode, notify once at the start
+                                    if self.in_conversation:
+                                        self.update_conversation_activity()
+                            
+                            if speech_detected:
+                                speech_frames.append(data)
                                 silence_count = 0
-                                last_speech_time = current_time
+                                
+                                # Check if recording has gone on too long
+                                if current_time - speech_start_time > max_speech_duration:
+                                    print("⏱️ Maximum recording duration reached, processing speech...")
+                                    self._process_speech_chunk(speech_frames)
+                                    speech_detected = False
+                                    speech_frames = []
+                                    silence_count = 0
+                                    last_speech_time = current_time
+                                    vad_speech_frames = 0
                     else:
+                        # Volume below threshold - reset VAD counter
+                        vad_speech_frames = 0
+                        
                         if speech_detected:
                             silence_count += 1
                             speech_frames.append(data)
@@ -1096,6 +1183,7 @@ class SpeechToText:
                                 speech_frames = []
                                 silence_count = 0
                                 last_speech_time = current_time  # Update last speech time
+                                vad_speech_frames = 0
                     
                     # Check for engagement timeout (false positive detection)
                     if self.track_metrics:
