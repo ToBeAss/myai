@@ -50,13 +50,6 @@ def test_chunking(text):
                     # Extract the complete sentence(s)
                     to_speak = buffer[:last_chunk_idx + 1].strip()
                     
-                    # Debug output
-                    if len(to_speak) >= min_chunk_size and "J." in to_speak:
-                        print(f"\n[DEBUG] About to chunk at position {last_chunk_idx}")
-                        print(f"[DEBUG] Buffer: '{buffer}'")
-                        print(f"[DEBUG] to_speak: '{to_speak}'")
-                        print(f"[DEBUG] Boundary char: '{buffer[last_chunk_idx]}'")
-                    
                     # Only chunk if we have substantial content (prevents tiny fragments)
                     if len(to_speak) >= min_chunk_size:
                         chunks.append(to_speak)
