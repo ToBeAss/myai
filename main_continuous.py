@@ -1,5 +1,13 @@
 import sys
 import time
+import os
+import warnings
+
+# Suppress pygame warnings before pygame is imported (via text_to_speech)
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "1"  # Hide pygame greeting message
+warnings.filterwarnings("ignore", category=DeprecationWarning)  # Suppress all deprecation warnings
+warnings.filterwarnings("ignore", message=".*pkg_resources.*")  # Suppress pkg_resources warning
+
 from lib.llm_wrapper import LLM_Wrapper
 from lib.memory import Memory
 from lib.agent import Agent
@@ -23,11 +31,8 @@ myai = Agent(llm=llm, memory=memory, agent_name="MyAI", description=description)
 
 # Initialize speech-to-text system
 print("🔧 Initializing speech-to-text system...")
-stt = SpeechToText(model_size="base")  # Upgraded from "tiny" to "base" for better Norwegian accuracy
-
-# Optional: Configure language preferences
-# Restrict to only English and Norwegian (includes all Norwegian variants)
-stt.set_language_preference(language=None, task="transcribe", allowed_languages=['en', 'no', 'nb', 'nn'])
+# Disable metrics tracking in production - should only be enabled in training environment
+stt = SpeechToText(model_size="base", track_metrics=False)  # Using 'base' model for better accuracy
 
 # Initialize text-to-speech system with automatic fallback
 print("🔧 Initializing text-to-speech system...")
@@ -108,78 +113,30 @@ def handle_voice_command(command_text):
     stt.enter_conversation_mode()
     stt.start_conversation_timer()
 
-# Choose operation mode
+# Start continuous listening mode
 print("\n🎙️ Voice-activated AI assistant ready!")
-print("Choose your mode:")
-print("1. 👂 Continuous listening (hands-free)")
-print("2. 🎤 Manual recording (press-to-talk)")
+print("\n� Starting continuous listening mode (hands-free)...")
+print("💡 Say one of the wake words followed by your question:")
+print(f"   - 'Sam, what's the weather?'")
+print(f"   - 'How is the forecast looking, Sam?'")
+print(f"   - 'Sam could you help me with something?'")
+print("\n💬 After the AI responds, you have 5 seconds to ask follow-up questions")
+print("   without saying the wake word again!")
+print("\n🛑 Press Ctrl+C to exit\n")
 
-while True:
-    try:
-        mode = input("\nEnter choice (1 or 2): ").strip()
+try:
+    stt.start_continuous_listening(handle_voice_command)
+    print("✅ Listening for wake words...\n")
+    
+    # Keep the main thread alive
+    while True:
+        time.sleep(1)
         
-        if mode == "1":
-            # Continuous listening mode
-            print("\n🚀 Starting continuous listening mode...")
-            print("💡 Say one of the wake words followed by your question:")
-            print(f"   - 'Hey MyAI, what's the weather?'")
-            print(f"   - 'Hey Assistant, help me with something'")
-            print(f"   - 'Computer, search for Python tutorials'")
-            print("\n� After the AI responds, you have 5 seconds to ask follow-up questions")
-            print("   without saying the wake word again!")
-            print("\n�� Press Ctrl+C to exit")
-
-            stt.start_continuous_listening(handle_voice_command)
-            
-            # Keep the main thread alive
-            try:
-                while True:
-                    time.sleep(1)
-            except KeyboardInterrupt:
-                print("\n🔇 Stopping continuous listening...")
-                stt.stop_continuous_listening()
-                print("👋 Goodbye!")
-                break
-        
-        elif mode == "2":
-            # Manual recording mode (original functionality)
-            print("\n🎤 Manual recording mode selected")
-            print("💡 Instructions:")
-            print("   - Press ENTER to start recording")
-            print("   - Speak clearly and loudly into your microphone")
-            print("   - Watch the volume indicator (aim for 3-5 bars)")
-            print("   - Press SPACE to stop recording (minimum 1 second)")
-            print("   - Type 'quit' and press ENTER to exit")
-            print("-" * 60)
-            
-            while True:
-                print()
-                # Wait for user to press Enter to start recording
-                user_action = input("🎤 Press ENTER to start recording (or type 'quit' to exit): ").strip().lower()
-                
-                if user_action == 'quit':
-                    print("👋 Goodbye!")
-                    break
-                
-                # Record and transcribe speech
-                user_input = stt.listen_and_transcribe(max_duration=30)
-                
-                if not user_input:
-                    print("🔇 No speech detected. Please try again.")
-                    continue
-                
-                # Stream the response with real-time TTS (speaks as it generates)
-                print("🤖: ", end="", flush=True)
-                tts.speak_streaming_async(myai.stream(user_input=user_input), print_text=True, min_chunk_size=30)
-                print()
-            break
-        
-        else:
-            print("❌ Please enter 1 or 2")
-            
-    except KeyboardInterrupt:
-        print("\n👋 Goodbye!")
-        break
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        break
+except KeyboardInterrupt:
+    print("\n🔇 Stopping continuous listening...")
+    stt.stop_continuous_listening()
+    print("👋 Goodbye!")
+except Exception as e:
+    print(f"\n❌ Error: {e}")
+    stt.stop_continuous_listening()
+    print("👋 Goodbye!")

@@ -11,16 +11,220 @@ from typing import Optional, Callable
 import struct
 import ssl
 import urllib.request
+import json
+from datetime import datetime
+import warnings
+
+# Suppress the FP16 warning - it's expected behavior on CPU
+warnings.filterwarnings("ignore", message="FP16 is not supported on CPU; using FP32 instead")
+
+class WakeWordMetrics:
+    """Track wake word activation metrics for analytics and optimization."""
+    
+    def __init__(self, metrics_file: str = "wake_word_metrics.json"):
+        """
+        Initialize metrics tracking.
+        
+        :param metrics_file: Path to file for storing metrics
+        """
+        self.metrics_file = metrics_file
+        self.session_start = time.time()
+        
+        # Session metrics
+        self.true_positives = 0
+        self.false_positives = 0
+        self.false_negatives = 0
+        self.true_negatives = 0
+        
+        # Detailed activation log
+        self.activation_log = []
+        
+        # Confidence distribution
+        self.confidence_distribution = {
+            "80-100": {"count": 0, "engaged": 0},
+            "60-79": {"count": 0, "engaged": 0},
+            "40-59": {"count": 0, "engaged": 0},
+            "0-39": {"count": 0, "engaged": 0}
+        }
+        
+        # Load historical metrics if available
+        self._load_metrics()
+    
+    def _load_metrics(self):
+        """Load historical metrics from file."""
+        if os.path.exists(self.metrics_file):
+            try:
+                with open(self.metrics_file, 'r') as f:
+                    data = json.load(f)
+                    # Could load historical data here for long-term tracking
+            except Exception as e:
+                print(f"⚠️ Could not load metrics: {e}")
+    
+    def _save_metrics(self):
+        """Save metrics to file."""
+        try:
+            data = {
+                "session_start": datetime.fromtimestamp(self.session_start).isoformat(),
+                "true_positives": self.true_positives,
+                "false_positives": self.false_positives,
+                "false_negatives": self.false_negatives,
+                "true_negatives": self.true_negatives,
+                "confidence_distribution": self.confidence_distribution,
+                "recent_activations": self.activation_log[-50:]  # Keep last 50
+            }
+            with open(self.metrics_file, 'w') as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            print(f"⚠️ Could not save metrics: {e}")
+    
+    def log_activation(self, transcription: str, confidence: int, wake_word_position: int):
+        """
+        Log an activation attempt.
+        
+        :param transcription: Full transcription
+        :param confidence: Confidence score
+        :param wake_word_position: Position of wake word
+        """
+        entry = {
+            "timestamp": time.time(),
+            "transcription": transcription[:100],  # Truncate for privacy
+            "confidence": confidence,
+            "position": wake_word_position,
+            "outcome": "pending"  # Will be updated by log_outcome
+        }
+        self.activation_log.append(entry)
+        
+        # Update confidence distribution
+        if confidence >= 80:
+            self.confidence_distribution["80-100"]["count"] += 1
+        elif confidence >= 60:
+            self.confidence_distribution["60-79"]["count"] += 1
+        elif confidence >= 40:
+            self.confidence_distribution["40-59"]["count"] += 1
+        else:
+            self.confidence_distribution["0-39"]["count"] += 1
+    
+    def log_outcome(self, engaged: bool):
+        """
+        Log the outcome of the most recent activation.
+        
+        :param engaged: True if user engaged (TP), False if ignored (FP)
+        """
+        if not self.activation_log:
+            return
+        
+        last_entry = self.activation_log[-1]
+        confidence = last_entry["confidence"]
+        
+        if engaged:
+            last_entry["outcome"] = "true_positive"
+            self.true_positives += 1
+            
+            # Update engagement rate for confidence range
+            if confidence >= 80:
+                self.confidence_distribution["80-100"]["engaged"] += 1
+            elif confidence >= 60:
+                self.confidence_distribution["60-79"]["engaged"] += 1
+            elif confidence >= 40:
+                self.confidence_distribution["40-59"]["engaged"] += 1
+        else:
+            last_entry["outcome"] = "false_positive"
+            self.false_positives += 1
+        
+        self._save_metrics()
+    
+    def log_false_negative(self, transcription: str):
+        """
+        Log a false negative (missed activation that user had to repeat).
+        
+        :param transcription: The transcription that was missed
+        """
+        self.false_negatives += 1
+        entry = {
+            "timestamp": time.time(),
+            "transcription": transcription[:100],
+            "confidence": 0,
+            "position": -1,
+            "outcome": "false_negative"
+        }
+        self.activation_log.append(entry)
+        self._save_metrics()
+    
+    def log_true_negative(self):
+        """Log a true negative (correctly ignored non-activation)."""
+        self.true_negatives += 1
+    
+    def generate_report(self) -> dict:
+        """
+        Generate performance statistics report.
+        
+        :return: Dictionary with metrics and recommendations
+        """
+        total_activations = self.true_positives + self.false_positives
+        
+        report = {
+            "session_duration": time.time() - self.session_start,
+            "total_activations": total_activations,
+            "true_positives": self.true_positives,
+            "false_positives": self.false_positives,
+            "false_negatives": self.false_negatives,
+            "true_negatives": self.true_negatives,
+            "success_rate": (self.true_positives / total_activations * 100) if total_activations > 0 else 0,
+            "confidence_distribution": {}
+        }
+        
+        # Calculate engagement rates per confidence range
+        for range_key, data in self.confidence_distribution.items():
+            count = data["count"]
+            engaged = data["engaged"]
+            engagement_rate = (engaged / count * 100) if count > 0 else 0
+            report["confidence_distribution"][range_key] = {
+                "activations": count,
+                "engagement_rate": engagement_rate
+            }
+        
+        return report
+    
+    def print_report(self):
+        """Print a formatted metrics report."""
+        report = self.generate_report()
+        
+        print("\n" + "="*60)
+        print("📊 WAKE WORD PERFORMANCE METRICS")
+        print("="*60)
+        print(f"⏱️  Session Duration: {report['session_duration']:.1f} seconds")
+        print(f"🎯 Total Activations: {report['total_activations']}")
+        print(f"✅ True Positives: {report['true_positives']} ({report['success_rate']:.1f}%)")
+        print(f"❌ False Positives: {report['false_positives']}")
+        print(f"😞 False Negatives: {report['false_negatives']}")
+        print(f"✓  True Negatives: {report['true_negatives']}")
+        print("\n📈 Confidence Distribution:")
+        for range_key in ["80-100", "60-79", "40-59", "0-39"]:
+            data = report["confidence_distribution"][range_key]
+            print(f"   {range_key}: {data['activations']} activations "
+                  f"({data['engagement_rate']:.0f}% engagement)")
+        print("="*60 + "\n")
 
 class SpeechToText:
     """Speech-to-text handler using OpenAI Whisper for offline processing."""
     
-    def __init__(self, model_size: str = "tiny"):
+    def __init__(self, 
+                 model_size: str = "tiny",
+                 flexible_wake_word: bool = True,
+                 confidence_threshold: int = None,
+                 confidence_mode: str = "balanced",
+                 track_metrics: bool = True,
+                 false_positive_timeout: float = 10.0):
         """
         Initialize the speech-to-text system.
         
         :param model_size: Whisper model size ('tiny', 'base', 'small', 'medium', 'large')
                           'tiny' is fastest and smallest (39MB), 'base' is more accurate (142MB)
+        :param flexible_wake_word: Enable flexible wake word positioning (anywhere in sentence)
+        :param confidence_threshold: Minimum confidence score (0-100) to activate, None uses mode default
+        :param confidence_mode: Preset mode - "strict" (80), "balanced" (60), "flexible" (40)
+        :param track_metrics: Enable analytics tracking for TP/FP/FN
+        :param false_positive_timeout: Seconds to wait for user engagement to detect FP
         """
         print(f"🎤 Loading Whisper '{model_size}' model... This might take a moment on first run.")
         try:
@@ -40,10 +244,9 @@ class SpeechToText:
             self.rate = 16000
             self.chunk = 1024
             
-            # Language preferences (None = auto-detect)
-            self.preferred_language = None  # Can be set to 'en', 'no', etc.
-            self.task = "transcribe"  # or "translate" to always translate to English
-            self.allowed_languages = None  # None = all languages, or list like ['en', 'no']
+            # Language settings - English only for optimal accuracy
+            self.preferred_language = "en"  # Force English for consistency
+            self.task = "transcribe"
             
             # Wake word detection
             self.wake_words = ["hey myai", "hey assistant", "hey ai"]  # Default wake words
@@ -57,8 +260,38 @@ class SpeechToText:
             self.delayed_timer_start = True  # Start timer only after initial silence period
             self.initial_silence_duration = 3.0  # Seconds of silence before starting the countdown
             
+            # Flexible wake word configuration
+            self.flexible_wake_word = flexible_wake_word
+            self.false_positive_timeout = false_positive_timeout
+            
+            # Set confidence threshold based on mode
+            if confidence_threshold is not None:
+                self.confidence_threshold = confidence_threshold
+            else:
+                # Use mode defaults
+                mode_thresholds = {
+                    "strict": 75,
+                    "balanced": 55,  # Lowered from 60 to accept natural end-of-sentence patterns
+                    "flexible": 40
+                }
+                self.confidence_threshold = mode_thresholds.get(confidence_mode, 55)
+            
+            self.confidence_mode = confidence_mode
+            
+            # Initialize metrics tracking
+            self.track_metrics = track_metrics
+            self.metrics = WakeWordMetrics() if track_metrics else None
+            self.last_activation_time = 0
+            self.waiting_for_engagement = False
+            
             print("✅ Speech-to-text system ready!")
-            print("🌍 Multilingual support: Auto-detects English, Norwegian, and 97+ other languages")
+            print("�🇧 Language: English only (for optimal accuracy)")
+            
+            if flexible_wake_word:
+                print(f"🎯 Flexible wake word: ENABLED (wake word can be anywhere in sentence)")
+                print(f"📊 Confidence mode: {confidence_mode.upper()} (threshold: {self.confidence_threshold})")
+                if track_metrics:
+                    print(f"📈 Analytics tracking: ENABLED")
         except Exception as e:
             print(f"❌ Error loading Whisper model: {e}")
             raise
@@ -106,6 +339,279 @@ class SpeechToText:
             return True
             
         return False
+    
+    def calculate_confidence_score(self, transcription: str, wake_word: str, position: int) -> int:
+        """
+        Calculate confidence score (0-100) for wake word activation.
+        
+        Analyzes multiple factors to determine if this is a genuine activation
+        or a casual mention of the wake word in conversation.
+        
+        :param transcription: Full transcribed text
+        :param wake_word: The wake word that was detected
+        :param position: Character position of wake word in transcription
+        :return: Confidence score (0-100)
+        """
+        score = 0
+        text_lower = transcription.lower()
+        length = len(transcription)
+        
+        # 1. WAKE WORD POSITION ANALYSIS (40 points max)
+        # Determines how naturally the wake word is positioned for a command
+        if position < 10:  # Very start of transcription
+            score += 40
+        else:
+            relative_pos = position / length if length > 0 else 0
+            if relative_pos < 0.2:  # First 20%
+                score += 35
+            elif relative_pos > 0.8:  # Last 20%
+                score += 35  # Increased from 30 - end position is natural for questions
+            else:  # Middle 60%
+                score += 20
+        
+        # 2. CONTENT ANALYSIS (30 points max)
+        # Check for question words and command verbs
+        question_words = ['what', 'where', 'when', 'who', 'why', 'how', 
+                         'is', 'are', 'can', 'could', 'would', 'should', 'will']
+        command_words = ['tell', 'show', 'find', 'search', 'get', 'play', 
+                        'stop', 'set', 'turn', 'open', 'close', 'remind', 
+                        'create', 'make', 'help', 'give', 'send']
+        
+        has_question = any(word in text_lower.split() for word in question_words)
+        has_command = any(word in text_lower.split() for word in command_words)
+        
+        if has_question:
+            score += 20  # Increased from 15
+        if has_command:
+            score += 10
+        
+        # Check for question mark (strong indicator)
+        if '?' in transcription:
+            score += 10  # Increased from 5
+        
+        # 3. GRAMMAR & CONTEXT ANALYSIS (20 points max)
+        # Conversational indicators (talking TO assistant)
+        conversational_pronouns = ['i ', ' i ', 'my ', 'me ', 'you ', 'your']
+        if any(pron in text_lower for pron in conversational_pronouns):
+            score += 10
+        
+        # INTENT TO ENGAGE: Phrases showing user wants to interact with assistant
+        # These override third-person penalties because they show clear intent
+        intent_phrases = ['need to ask', 'should ask', 'let me ask', 'want to ask',
+                         'going to ask', 'have to ask', 'let\'s ask', 'i\'ll ask']
+        has_intent = any(phrase in text_lower for phrase in intent_phrases)
+        
+        # CORRECTIONS & APOLOGIES: User is engaging to correct/clarify
+        correction_phrases = ['no wait', 'sorry ' + wake_word, 'actually ' + wake_word,
+                             'i meant', 'i mean', 'correction', 'my mistake']
+        has_correction = any(phrase in text_lower for phrase in correction_phrases)
+        
+        if has_correction:
+            score += 20  # Boost for corrections - clear engagement
+        
+        if has_intent:
+            # Strong positive signal - user is expressing intent to engage
+            score += 25
+        else:
+            # Only apply third-person penalty if there's NO intent phrase
+            # Third person references (talking ABOUT someone)
+            # Use word boundaries to avoid false positives like "the" matching "he"
+            third_person = [' he ', ' she ', ' they ', ' them ', ' his ', ' her ', ' their ']
+            if any(third in text_lower for third in third_person):
+                score -= 15
+        
+        # REPORTING SPEECH: Phrases that report what Sam said/did (not addressing Sam)
+        # Note: "Sam needs to know" is addressing Sam (telling to remember), so we exclude it
+        reporting_verbs = [f'{wake_word} said', f'{wake_word} told', 
+                          f'{wake_word} asked', f'{wake_word} mentioned',
+                          f'{wake_word} thinks', f'{wake_word} wants',
+                          f'{wake_word} doesn',  # "doesn't"
+                          f'{wake_word} never ', f'{wake_word} walked',
+                          f'{wake_word} looked', f'{wake_word} smiled']
+        
+        # Only penalize if it's not "needs to know" (which is engagement)
+        has_reporting = any(report in text_lower for report in reporting_verbs)
+        has_needs_to_know = f'{wake_word} needs to know' in text_lower
+        
+        if has_reporting and not has_needs_to_know:
+            score -= 25
+        
+        # But DO penalize generic "Sam needs" statements (not "needs to know")
+        if f'{wake_word} needs ' in text_lower and not has_needs_to_know:
+            # Check if it's a statement about Sam's needs vs command to Sam
+            # "Sam needs a computer" vs "Sam needs to remember this"
+            needs_patterns = [f'{wake_word} needs a ', f'{wake_word} needs help',
+                            f'{wake_word} needs more', f'{wake_word} needs some']
+            if any(pattern in text_lower for pattern in needs_patterns):
+                score -= 25
+        
+        # DESCRIPTIVE STATEMENTS: Describing Sam's characteristics (not addressing Sam)
+        # We need to distinguish:
+        #   "Sam works at office" → REJECT (statement about Sam)
+        #   "Sam could you help?" → ACCEPT (question to Sam, even without comma)
+        # 
+        # Strategy: Only penalize if there's NO comma AND NO modal/question verb
+        # Modal verbs (could/would/should/can) indicate addressing Sam
+        has_comma_after_wake = f'{wake_word},' in text_lower or f'{wake_word} ,' in text_lower
+        
+        # Check for modal/question verbs that indicate addressing (even without comma)
+        modal_verbs = ['could', 'would', 'should', 'can', 'will', 'may', 'might']
+        has_modal = any(modal in text_lower.split() for modal in modal_verbs)
+        
+        # Only penalize descriptive patterns if:
+        # 1. No comma after wake word (not clearly addressing)
+        # 2. No modal verb (not a polite question/request)
+        if not has_comma_after_wake and not has_modal:
+            descriptive_patterns = [f'{wake_word} is ', f'{wake_word} was ',
+                                   f'{wake_word} seems ', f'{wake_word} looks ',
+                                   f'{wake_word} works ', f'{wake_word} lives ',
+                                   f'{wake_word} does ', f'{wake_word} has ']
+            if any(desc in text_lower for desc in descriptive_patterns):
+                score -= 25
+        
+        # PAST ENCOUNTERS: Casual mentions of meeting/seeing Sam
+        encounter_patterns = ['i met ' + wake_word, 'i saw ' + wake_word,
+                             'i think ' + wake_word, 'i know ' + wake_word]
+        if any(enc in text_lower for enc in encounter_patterns):
+            score -= 20
+        
+        # NARRATIVE INDICATORS: Words that suggest storytelling/narration
+        narrative_starters = ['then ' + wake_word, 'suddenly ' + wake_word, 
+                             'meanwhile ' + wake_word, 'afterwards ' + wake_word]
+        if any(narr in text_lower for narr in narrative_starters):
+            score -= 25
+        
+        # COLLABORATIVE PAST TENSE: "Sam and I" with past tense verbs
+        if f'{wake_word} and i ' in text_lower:
+            # Check for past tense indicators
+            past_verbs = ['went', 'did', 'had', 'were', 'saw', 'made', 'got', 'came']
+            if any(past in text_lower for past in past_verbs):
+                score -= 20
+        
+        # INDIRECT MESSAGES: "Tell Sam that..." (relaying message, not engaging)
+        if f'tell {wake_word} that' in text_lower or f'ask {wake_word} to' in text_lower:
+            score -= 25
+        
+        # Prepositions with wake word (e.g., "to Sam", "with Sam")
+        # But NOT if it's an intent phrase like "need to ask Sam"
+        if not has_intent:
+            prepositions = [f' to {wake_word}', f' with {wake_word}', 
+                           f' about {wake_word}', f' from {wake_word}']
+            if any(prep in text_lower for prep in prepositions):
+                score -= 15
+        
+        # Proper sentence structure
+        if transcription and (transcription[0].isupper() or position < 5):
+            score += 5
+        
+        # 4. WAKE WORD USAGE (10 points max)
+        # Count wake words with word boundaries to avoid "same" matching "sam"
+        import re
+        wake_word_pattern = r'\b' + re.escape(wake_word) + r'\b'
+        wake_word_matches = re.findall(wake_word_pattern, text_lower)
+        wake_word_count = len(wake_word_matches)
+        
+        if wake_word_count == 1:
+            score += 10
+        elif wake_word_count == 2:
+            # Two wake words might be emphasis ("Sam, Sam, are you there?")
+            # Don't penalize as heavily if there's a question mark or comma between
+            if '?' in transcription or transcription.count(',') >= 2:
+                score += 5  # Still positive for emphatic addressing
+            else:
+                score -= 15  # Moderate penalty for ambiguous double mention
+        elif wake_word_count > 2:
+            score -= 25  # Strong penalty for multiple occurrences
+        
+        # Check if wake word is followed by a last name (e.g., "Sam Smith")
+        # This indicates talking about a person, not addressing the assistant
+        common_last_names = ['smith', 'jones', 'brown', 'johnson', 'williams', 'davis', 'miller', 'wilson', 'moore', 'taylor']
+        words = text_lower.split()
+        for i, word in enumerate(words):
+            if wake_word in word and i + 1 < len(words):
+                next_word = words[i + 1]
+                # Check if next word is a last name or capitalized word (likely a last name)
+                if next_word in common_last_names or (i + 1 < len(transcription.split()) and transcription.split()[i + 1][0].isupper()):
+                    score -= 30  # Strong penalty for "Sam Smith" pattern
+                    break
+        
+        # Check for possessive form (Sam's, Samantha's) and plural (Sams) - check ALL wake words
+        has_possessive = False
+        for ww in self.wake_words:
+            # Possessive patterns: "sam's", "samantha's"
+            possessive_patterns = [f"{ww}'s", f"{ww}'"]
+            # Plural pattern: "sams" (not the wake word, but plural of the name)
+            plural_pattern = f"{ww}s "
+            
+            if any(poss in text_lower for poss in possessive_patterns):
+                has_possessive = True
+                break
+            # Check for plural (e.g., "Sams are nice people")
+            if plural_pattern in text_lower and f"{ww} " not in text_lower:
+                has_possessive = True  # Treat plural as possessive-like (not addressing)
+                break
+        
+        if has_possessive:
+            score -= 30
+        
+        # 5. MULTI-SENTENCE BONUS (10 points max)
+        sentence_endings = text_lower.count('.') + text_lower.count('!') + text_lower.count('?')
+        if sentence_endings >= 1:
+            score += 10
+        
+        # 6. SPECIAL CASE: Just wake word alone (user calling the assistant)
+        # This is a common and valid use case - user says "Sam" to get attention
+        words_without_wake_word = [w for w in text_lower.split() if w not in self.wake_words]
+        if len(words_without_wake_word) <= 1:  # Only wake word (or wake word + one filler word like "hey")
+            score += 20  # Boost to ensure it passes threshold
+        
+        # 7. BONUS: Wake word at end with question mark (natural question format)
+        if transcription.strip().endswith(wake_word + '?') or transcription.strip().endswith(wake_word):
+            if '?' in transcription or has_question:
+                score += 5  # Small boost for natural questioning format
+        
+        # Clamp score to 0-100 range
+        return max(0, min(100, score))
+    
+    def extract_command_with_confidence(self, transcription: str, wake_words: list) -> tuple:
+        """
+        Extract command and calculate confidence score.
+        
+        Keeps entire transcription intact (including wake word) for maximum context.
+        Only calculates confidence to determine if activation is genuine.
+        
+        :param transcription: Full transcribed text
+        :param wake_words: List of wake words to search for
+        :return: (full_transcription, confidence_score, wake_word_position) or (None, 0, None)
+        """
+        transcription_lower = transcription.lower()
+        
+        # Find first occurrence of any wake word (with word boundaries)
+        import re
+        wake_word_found = None
+        wake_word_position = -1
+        
+        for wake_word in wake_words:
+            # Use regex with word boundaries to avoid matching "sam" in "same"
+            pattern = r'\b' + re.escape(wake_word) + r'\b'
+            match = re.search(pattern, transcription_lower)
+            if match:
+                wake_word_found = wake_word
+                wake_word_position = match.start()
+                break
+        
+        if not wake_word_found:
+            return None, 0, None
+        
+        # Calculate confidence score
+        confidence = self.calculate_confidence_score(
+            transcription, 
+            wake_word_found, 
+            wake_word_position
+        )
+        
+        # Return ENTIRE transcription (preserve all context)
+        return transcription, confidence, wake_word_position
     
     def record_audio(self, duration: Optional[int] = None) -> str:
         """
@@ -335,21 +841,18 @@ class SpeechToText:
                 return ""
             
             # Transcribe with Whisper using direct audio loading
-            print("🔄 Starting Whisper transcription...")
+            print("🔄 Starting Whisper transcription (English)...")
             
             # Load audio data directly (bypassing Whisper's FFmpeg dependency)
             audio_data = self.load_audio_data(audio_file_path)
             
-            # Transcribe using the loaded audio data with language detection
-            # Whisper automatically detects language, but we can get that info
+            # Transcribe using English only
             result = self.model.transcribe(
                 audio_data,
-                language=self.preferred_language,  # Use preferred language or auto-detect
-                task=self.task  # "transcribe" or "translate"
+                language="en"  # Force English for optimal accuracy
             )
             
             transcribed_text = result["text"].strip()
-            detected_language = result.get("language", "unknown")
             
             # Debug: Check if we got any result
             if not transcribed_text:
@@ -366,55 +869,15 @@ class SpeechToText:
                     
                     result = self.model.transcribe(
                         amplified_audio,
-                        language=self.preferred_language,
-                        task=self.task
+                        language="en"
                     )
                     transcribed_text = result["text"].strip()
-                    detected_language = result.get("language", "unknown")
                     
                     if transcribed_text:
                         print("✅ Amplification helped!")
                     else:
                         print("❌ Still no speech detected after amplification")
             
-            # Check if detected language is in allowed list
-            if self.allowed_languages and detected_language not in self.allowed_languages:
-                print(f"⚠️ Detected language '{detected_language}' not in allowed list {self.allowed_languages}")
-                
-                # Try with the most likely allowed language if Norwegian was detected as Swedish
-                if detected_language == "sv" and "no" in self.allowed_languages:
-                    print("🔄 Swedish detected, retrying as Norwegian...")
-                    result = self.model.transcribe(
-                        audio_data,
-                        language="no",  # Force Norwegian
-                        task=self.task
-                    )
-                    transcribed_text = result["text"].strip()
-                    detected_language = "no (forced)"
-                elif detected_language not in ["en", "no", "nb", "nn"] and "en" in self.allowed_languages:
-                    print("🔄 Unknown language detected, retrying as English...")
-                    result = self.model.transcribe(
-                        audio_data,
-                        language="en",  # Force English
-                        task=self.task
-                    )
-                    transcribed_text = result["text"].strip()
-                    detected_language = "en (forced)"
-            
-            # Show language detection result
-            language_names = {
-                "en": "English",
-                "no": "Norwegian", 
-                "nb": "Norwegian Bokmål",
-                "nn": "Norwegian Nynorsk",
-                "sv": "Swedish",
-                "da": "Danish",
-                "en (forced)": "English (forced)",
-                "no (forced)": "Norwegian (forced)"
-            }
-            language_display = language_names.get(detected_language, detected_language)
-            
-            print(f"🌍 Detected language: {language_display} ({detected_language})")
             print(f"✅ Transcription completed: '{transcribed_text}'")
             
             # Check for hallucinations (Whisper's tendency to generate repetitive text from noise)
@@ -467,42 +930,6 @@ class SpeechToText:
             print("🔇 No speech detected or transcription failed")
         
         return transcribed_text
-    
-    def set_language_preference(self, language: Optional[str] = None, task: str = "transcribe", allowed_languages: Optional[list] = None):
-        """
-        Set language preferences for transcription.
-        
-        :param language: Language code ('en', 'no', 'nb', 'nn', etc.) or None for auto-detect
-        :param task: 'transcribe' to keep original language, 'translate' to translate to English
-        :param allowed_languages: List of allowed language codes ['en', 'no'] or None for all languages
-        """
-        self.preferred_language = language
-        self.task = task
-        self.allowed_languages = allowed_languages
-        
-        language_names = {
-            "en": "English",
-            "no": "Norwegian",
-            "nb": "Norwegian Bokmål", 
-            "nn": "Norwegian Nynorsk"
-        }
-        
-        if language:
-            lang_name = language_names.get(language, language)
-            print(f"🌍 Language preference set to: {lang_name}")
-        else:
-            print("🌍 Language preference: Auto-detect")
-        
-        if allowed_languages:
-            lang_list = [language_names.get(lang, lang) for lang in allowed_languages]
-            print(f"🔒 Allowed languages: {', '.join(lang_list)}")
-        else:
-            print("🌍 Allowed languages: All")
-        
-        if task == "translate":
-            print("🔄 Task: Translate to English")
-        else:
-            print("📝 Task: Transcribe in original language")
 
     def set_conversation_timeout(self, timeout: float):
         """
@@ -537,6 +964,17 @@ class SpeechToText:
         """Mark that speech activity was detected (timer will handle this automatically)."""
         if self.in_conversation:
             print("🎙️ Speech activity detected - timer will restart after processing")
+    
+    def check_engagement_timeout(self):
+        """Check if user engagement timeout has expired (for false positive detection)."""
+        if not self.track_metrics or not self.waiting_for_engagement:
+            return
+        
+        time_since_activation = time.time() - self.last_activation_time
+        if time_since_activation > self.false_positive_timeout:
+            # No engagement detected - likely false positive
+            self.metrics.log_outcome(engaged=False)
+            self.waiting_for_engagement = False
 
     def set_wake_words(self, wake_words: list):
         """
@@ -562,10 +1000,6 @@ class SpeechToText:
         # Start listening thread
         listening_thread = threading.Thread(target=self._continuous_listen_loop, daemon=True)
         listening_thread.start()
-        
-        print("👂 Continuous listening started...")
-        print(f"🎯 Say one of: {', '.join(self.wake_words)}")
-        print("🔇 Press Ctrl+C to stop")
 
     def stop_continuous_listening(self):
         """Stop continuous listening."""
@@ -573,6 +1007,10 @@ class SpeechToText:
         # Clean up any leftover files
         self.cleanup_audio_files()
         print("🔇 Continuous listening stopped")
+        
+        # Print metrics report if tracking is enabled
+        if self.track_metrics and self.metrics:
+            self.metrics.print_report()
 
     def _continuous_listen_loop(self):
         """Main loop for continuous listening."""
@@ -587,8 +1025,6 @@ class SpeechToText:
                 input=True,
                 frames_per_buffer=self.chunk
             )
-            
-            print("✅ Listening for wake words...")
             
             # Buffer to store recent audio
             audio_buffer = []
@@ -661,6 +1097,10 @@ class SpeechToText:
                                 silence_count = 0
                                 last_speech_time = current_time  # Update last speech time
                     
+                    # Check for engagement timeout (false positive detection)
+                    if self.track_metrics:
+                        self.check_engagement_timeout()
+                    
                     time.sleep(0.01)  # Small delay to prevent CPU overload
                     
                 except Exception as e:
@@ -696,9 +1136,9 @@ class SpeechToText:
                 wf.setframerate(self.rate)
                 wf.writeframes(b''.join(speech_frames))
             
-            # Transcribe the audio
+            # Transcribe the audio (English only)
             audio_data = self.load_audio_data(temp_filename)
-            result = self.model.transcribe(audio_data, language=self.preferred_language)
+            result = self.model.transcribe(audio_data, language="en")
             transcribed_text = result["text"].strip().lower()
             
             # Check for hallucinations early to avoid processing noise
@@ -713,50 +1153,89 @@ class SpeechToText:
             if self.in_conversation:
                 print(f"💬 Follow-up detected: '{transcribed_text}'")
                 if transcribed_text and self.wake_callback:
+                    # Mark engagement for previous activation
+                    if self.track_metrics and self.waiting_for_engagement:
+                        self.metrics.log_outcome(engaged=True)
+                        self.waiting_for_engagement = False
                     self.wake_callback(transcribed_text)
                 return
             
-            # Check for wake words (only when not in conversation mode)
-            wake_word_found = False
-            for wake_word in self.wake_words:
-                if wake_word in transcribed_text:
-                    print(f"🎯 Wake word detected: '{wake_word}'")
-                    print(f"📝 Full transcription: '{transcribed_text}'")
-                    wake_word_found = True
+            # Use flexible wake word detection if enabled
+            if self.flexible_wake_word:
+                # Extract command with confidence scoring
+                command, confidence, position = self.extract_command_with_confidence(
+                    transcribed_text, 
+                    self.wake_words
+                )
+                
+                if command is None:
+                    # No wake word found
+                    if len(transcribed_text) > 3:
+                        print(f"🔇 Speech without wake word ignored: '{transcribed_text[:30]}{'...' if len(transcribed_text) > 30 else ''}'")
+                        if self.track_metrics:
+                            self.metrics.log_true_negative()
+                    return
+                
+                # Wake word found - check confidence
+                print(f"🎯 Wake word detected at position {position}")
+                print(f"📝 Full transcription: '{transcribed_text}'")
+                print(f"📊 Confidence score: {confidence}/100")
+                
+                # Log activation
+                if self.track_metrics:
+                    self.metrics.log_activation(transcribed_text, confidence, position)
+                    self.last_activation_time = time.time()
+                    self.waiting_for_engagement = True
+                
+                # Determine action based on confidence
+                if confidence >= self.confidence_threshold:
+                    # Accept activation
+                    if confidence >= 80:
+                        print(f"✅ HIGH confidence - Processing command")
+                    elif confidence >= 60:
+                        print(f"⚠️  MEDIUM confidence - Processing command")
+                    else:
+                        print(f"❓ LOW confidence - Processing with caution")
                     
-                    # Extract the part after the wake word
-                    wake_index = transcribed_text.find(wake_word)
-                    command_text = transcribed_text[wake_index + len(wake_word):].strip()
-                    
-                    if command_text:
-                        # Check if the command seems incomplete (ends with trailing words that suggest continuation)
-                        incomplete_endings = ["a", "an", "the", "how", "what", "where", "when", "why", "how do", "how to", "what is", "make a"]
-                        seems_incomplete = any(command_text.strip().endswith(ending) for ending in incomplete_endings)
+                    if self.wake_callback:
+                        # Mark this activation as True Positive since we're processing it
+                        if self.track_metrics and self.waiting_for_engagement:
+                            self.metrics.log_outcome(engaged=True)
+                            self.waiting_for_engagement = False
+                        self.wake_callback(command)
+                else:
+                    # Reject activation
+                    print(f"🚫 Confidence too low ({confidence} < {self.confidence_threshold}) - Ignoring")
+                    if self.track_metrics:
+                        self.metrics.log_true_negative()
+                        self.waiting_for_engagement = False
+            
+            else:
+                # Original wake word detection (for backward compatibility)
+                wake_word_found = False
+                for wake_word in self.wake_words:
+                    if wake_word in transcribed_text:
+                        print(f"🎯 Wake word detected: '{wake_word}'")
+                        print(f"📝 Full transcription: '{transcribed_text}'")
+                        wake_word_found = True
                         
-                        if seems_incomplete:
-                            print(f"⚠️ Command seems incomplete: '{command_text}' - Please continue or repeat")
-                            if self.wake_callback:
-                                self.wake_callback(command_text + " [INCOMPLETE - Please continue or repeat your question]")
-                        else:
-                            # Complete command - use it directly
+                        # Extract the part after the wake word
+                        wake_index = transcribed_text.find(wake_word)
+                        command_text = transcribed_text[wake_index + len(wake_word):].strip()
+                        
+                        if command_text:
                             if self.wake_callback:
                                 self.wake_callback(command_text)
-                    else:
-                        # Just wake word detected, but speech might have been cut off
-                        # Wait a bit longer and try to capture more speech
-                        print("👂 Wake word detected, waiting for complete question...")
-                        time.sleep(1.0)  # Give user time to continue speaking
-                        
-                        # The speech detection will continue and capture more if they're still talking
-                        # If they've finished, we'll ask them to continue
-                        if self.wake_callback:
-                            self.wake_callback("") # Empty command will trigger a "what can I help you with?" response
-                    break
-            
-            # If no wake word found but we have meaningful speech, ignore it
-            if not wake_word_found and len(transcribed_text) > 3:
-                print(f"🔇 Speech without wake word ignored: '{transcribed_text[:30]}{'...' if len(transcribed_text) > 30 else ''}'")
-                pass
+                        else:
+                            # Just wake word, no command
+                            if self.wake_callback:
+                                self.wake_callback("")
+                        break
+                
+                # If no wake word found but we have meaningful speech, ignore it
+                if not wake_word_found and len(transcribed_text) > 3:
+                    print(f"🔇 Speech without wake word ignored: '{transcribed_text[:30]}{'...' if len(transcribed_text) > 30 else ''}'")
+                    pass
                 
         except Exception as e:
             print(f"❌ Error processing speech chunk: {e}")
