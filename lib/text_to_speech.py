@@ -245,6 +245,16 @@ class TextToSpeech:
                 if char == '.':
                     if self._is_sentence_boundary(text, i):
                         last_valid_boundary = i
+                elif char == ',':
+                    # Commas are natural pause points for speech
+                    # Skip if followed by space and number (like "1,000")
+                    after = text[i+1:] if i+1 < len(text) else ""
+                    if after and re.match(r'^\s*\d', after):
+                        continue  # Skip comma in numbers
+                    # Skip multiple commas or comma at start
+                    if i == 0 or (i > 0 and text[i-1] == ','):
+                        continue
+                    last_valid_boundary = i
                 else:
                     # ! and ? are almost always sentence boundaries
                     # But check for emoticons and multiple punctuation
@@ -684,7 +694,7 @@ class TextToSpeech:
             speech_thread.join()
     
     def speak_streaming_async(self, text_generator, chunk_on: str = ".", print_text: bool = True,
-                              min_chunk_size: int = 20):
+                              min_chunk_size: int = 15):
         """
         Speak text as it's being generated with truly parallel processing.
         Multiple sentences can be synthesized and queued while others are playing.
@@ -693,7 +703,7 @@ class TextToSpeech:
         :param text_generator: Generator that yields text tokens
         :param chunk_on: Character to chunk on (default: "." for sentences)
         :param print_text: If True, print the text as it's being spoken
-        :param min_chunk_size: Minimum characters before considering a chunk (prevents tiny fragments)
+        :param min_chunk_size: Minimum characters before considering a chunk (prevents tiny fragments, default 15)
         """
         buffer = ""
         synthesis_queue = queue.Queue()
@@ -771,9 +781,14 @@ class TextToSpeech:
                         # Extract the complete sentence(s)
                         to_speak = buffer[:last_chunk_idx + 1].strip()
                         
+                        # Smart chunking: use different min sizes based on delimiter type
+                        # Complete sentences (.!?) can be shorter, commas need more context
+                        delimiter = buffer[last_chunk_idx] if last_chunk_idx < len(buffer) else ''
+                        effective_min = 5 if delimiter in '.!?' else min_chunk_size
+                        
                         # Only chunk if we have substantial content (prevents tiny fragments)
                         # This ensures we don't speak very short incomplete phrases
-                        if len(to_speak) >= min_chunk_size:
+                        if len(to_speak) >= effective_min:
                             # Keep the remainder for the next iteration
                             buffer = buffer[last_chunk_idx + 1:]
                             

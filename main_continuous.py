@@ -33,7 +33,11 @@ myai = Agent(llm=llm, memory=memory, agent_name="Sam", description=description)
 # Initialize speech-to-text system
 print("🔧 Initializing speech-to-text system...")
 # Disable metrics tracking in production - should only be enabled in training environment
-stt = SpeechToText(model_size="base", track_metrics=False)  # Using 'base' model for better accuracy
+# Using 'base' model for better accuracy with faster-whisper optimization (4-5x faster)
+stt = SpeechToText(model_size="base", track_metrics=False, use_faster_whisper=True)
+
+# Enable chunked transcription for faster response times
+stt.enable_chunked_transcription_mode(max_workers=2)
 
 # Initialize text-to-speech system with automatic fallback
 print("🔧 Initializing text-to-speech system...")
@@ -109,8 +113,9 @@ def handle_voice_command(command_text):
     response_generator = myai.stream(user_input=command_text)
     
     # Stream the response with real-time TTS (speaks as it generates)
+    # Using optimized parameters for faster response with natural pauses at commas
     print("🤖: ", end="", flush=True)
-    tts.speak_streaming_async(response_generator, print_text=True)
+    tts.speak_streaming_async(response_generator, chunk_on=",.!?", print_text=True, min_chunk_size=10)
     print()
     
     # Enter conversation mode to allow follow-up questions

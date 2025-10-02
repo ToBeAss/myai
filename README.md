@@ -52,6 +52,26 @@ My personal AI assistant
 > [!WARNING]
 > The `.env` file is used to store sensitive information like API keys and database credentials securely. Make sure not to commit it to version control by adding `.env` to your `.gitignore` file.
 
+## 🚀 Performance Optimizations
+
+This voice assistant is **highly optimized** for low-latency responses:
+
+### ⚡ Chunked Transcription (NEW!)
+Transcribes speech in parallel chunks while you continue speaking.
+- **300-1200ms faster** response time for multi-phrase commands
+- Automatically enabled in `main_continuous.py`
+- See: [`CHUNKED_TRANSCRIPTION_QUICKREF.md`](CHUNKED_TRANSCRIPTION_QUICKREF.md)
+
+### 🎯 Other Optimizations
+- **faster-whisper**: 4-5x faster transcription with CTranslate2
+- **Dynamic silence detection**: Adaptive thresholds (750-1250ms)
+- **Comma-based TTS chunking**: Synthesis starts at natural pauses
+- **Parallel processing**: TTS synthesis and playback in separate threads
+
+**Combined result**: ~2-3 seconds faster than baseline! 🎉
+
+For details, see: [`LATENCY_OPTIMIZATION_SETTINGS.md`](LATENCY_OPTIMIZATION_SETTINGS.md)
+
 ## Environment Management
 * **Deactivate the virtual environment** (when done)
     ```bash

@@ -15,6 +15,16 @@ import json
 from datetime import datetime
 import warnings
 import webrtcvad
+from concurrent.futures import ThreadPoolExecutor, Future
+import uuid
+
+# Try to import faster-whisper for optimized performance
+try:
+    from faster_whisper import WhisperModel
+    FASTER_WHISPER_AVAILABLE = True
+except ImportError:
+    FASTER_WHISPER_AVAILABLE = False
+    print("ℹ️  faster-whisper not available. Install with: pip install faster-whisper")
 
 # Suppress the FP16 warning - it's expected behavior on CPU
 warnings.filterwarnings("ignore", message="FP16 is not supported on CPU; using FP32 instead")
@@ -217,7 +227,8 @@ class SpeechToText:
                  track_metrics: bool = True,
                  false_positive_timeout: float = 10.0,
                  enable_vad: bool = True,
-                 vad_aggressiveness: int = 2):
+                 vad_aggressiveness: int = 2,
+                 use_faster_whisper: bool = True):
         """
         Initialize the speech-to-text system.
         
@@ -230,6 +241,7 @@ class SpeechToText:
         :param false_positive_timeout: Seconds to wait for user engagement to detect FP
         :param enable_vad: Enable WebRTC Voice Activity Detection for noise filtering
         :param vad_aggressiveness: VAD filtering level (0=liberal, 1=moderate, 2=balanced, 3=aggressive)
+        :param use_faster_whisper: Use optimized faster-whisper backend if available (4-5x faster)
         """
         print(f"🎤 Loading Whisper '{model_size}' model... This might take a moment on first run.")
         try:
@@ -242,7 +254,17 @@ class SpeechToText:
             opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ssl_context))
             urllib.request.install_opener(opener)
             
-            self.model = whisper.load_model(model_size)
+            # Load Whisper model with optional faster-whisper optimization
+            if use_faster_whisper and FASTER_WHISPER_AVAILABLE:
+                print("🚀 Using faster-whisper for optimized transcription (4-5x faster)")
+                self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
+                self.using_faster_whisper = True
+            else:
+                if use_faster_whisper and not FASTER_WHISPER_AVAILABLE:
+                    print("⚠️  faster-whisper not available, falling back to standard whisper")
+                    print("    Install with: pip install faster-whisper")
+                self.model = whisper.load_model(model_size)
+                self.using_faster_whisper = False
             self.is_recording = False
             self.audio_format = pyaudio.paInt16
             self.channels = 1
@@ -303,6 +325,11 @@ class SpeechToText:
                     print(f"⚠️ Could not initialize VAD: {e}. Continuing without VAD...")
                     self.enable_vad = False
             
+            # Chunked transcription for parallel processing
+            self.enable_chunked_transcription = False  # Can be enabled after init
+            self.transcription_chunks = []  # Store chunk futures
+            self.chunk_lock = threading.Lock()  # Thread-safe chunk access
+            
             print("✅ Speech-to-text system ready!")
             print("🇬🇧 Language: English only (for optimal accuracy)")
             
@@ -358,6 +385,149 @@ class SpeechToText:
         # 3. Wake word detection handles validation
         
         return False
+    
+    def enable_chunked_transcription_mode(self, max_workers: int = 2):
+        """
+        Enable chunked transcription with parallel processing.
+        This allows transcribing audio chunks in parallel as speech continues.
+        
+        :param max_workers: Maximum number of parallel transcription threads
+        """
+        self.enable_chunked_transcription = True
+        self.transcription_executor = ThreadPoolExecutor(max_workers=max_workers)
+        print(f"⚡ Chunked transcription: ENABLED (up to {max_workers} parallel transcriptions)")
+        print("   Benefits: Faster response time for multi-phrase commands")
+    
+    def _clean_chunked_transcript(self, transcripts: list) -> str:
+        """
+        Clean and merge chunked transcripts intelligently.
+        
+        Whisper adds punctuation thinking each chunk is complete, which can create
+        awkward combinations like "What's the weather? in London."
+        This function cleans up such artifacts.
+        
+        :param transcripts: List of individual chunk transcripts
+        :return: Cleaned combined transcript
+        """
+        if not transcripts:
+            return ""
+        
+        if len(transcripts) == 1:
+            return transcripts[0].strip()
+        
+        cleaned_chunks = []
+        
+        for i, chunk in enumerate(transcripts):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            
+            # Detect if this looks like a continuation (not a new sentence)
+            is_continuation = False
+            if i > 0 and chunk:
+                # Lowercase start = definitely continuation
+                if chunk[0].islower():
+                    is_continuation = True
+                else:
+                    # Fragment without subject pronoun = likely continuation
+                    # Check first two words for subject indicators
+                    words = chunk.lower().split()
+                    first_words = words[:2] if len(words) >= 2 else words
+                    
+                    # Look for actual subject pronouns or sentence connectors
+                    has_subject = any(word in first_words for word in ['i', 'you', 'he', 'she', 'it', 'we', 'they', 'also', 'and', 'but', 'sam'])
+                    
+                    # Fragments starting with "what", "where", etc. without subject = continuation
+                    # e.g., "what the weather" is part of "know what the weather"
+                    question_words = ['what', 'where', 'when', 'why', 'how', 'which', 'who']
+                    if words and words[0] in question_words and not has_subject:
+                        is_continuation = True
+                    # Short fragments without clear subject = continuation
+                    elif len(chunk) < 20 and not has_subject:
+                        is_continuation = True
+            
+            # If this is a continuation, clean up previous chunk's punctuation
+            if is_continuation and cleaned_chunks:
+                if cleaned_chunks[-1].endswith(('?', '!', '.')):
+                    cleaned_chunks[-1] = cleaned_chunks[-1][:-1].strip()
+                # Lowercase the first letter since it's a continuation
+                if chunk:
+                    chunk = chunk[0].lower() + chunk[1:]
+            
+            # For middle chunks (not first, not last) - remove their ending punctuation
+            if 0 < i < len(transcripts) - 1:
+                if chunk.endswith(('?', '!', '.')):
+                    chunk = chunk[:-1].strip()
+            
+            cleaned_chunks.append(chunk)
+        
+        # Join with spaces
+        combined = ' '.join(cleaned_chunks)
+        
+        # Clean up double punctuation (e.g., "weather. . in" → "weather in")
+        import re
+        combined = re.sub(r'[.!?]\s+[.!?]', '.', combined)
+        
+        # Clean up awkward punctuation before lowercase continuation
+        # "weather? in london" → "weather in london"
+        # "weather. in london" → "weather in london"  
+        combined = re.sub(r'([.!?])\s+([a-z])', r' \2', combined)
+        
+        # If we removed all ending punctuation and the sentence doesn't end with one, add a period
+        if combined and not combined[-1] in '.!?,;:':
+            # Check if last chunk originally had punctuation
+            if transcripts and transcripts[-1].strip() and transcripts[-1].strip()[-1] in '.!?':
+                # Keep the original ending punctuation
+                combined += transcripts[-1].strip()[-1]
+        
+        return combined.strip()
+    
+    def _transcribe_audio_chunk_async(self, audio_frames: list) -> Future:
+        """
+        Transcribe an audio chunk asynchronously in a background thread.
+        
+        :param audio_frames: List of audio frame data
+        :return: Future object containing the transcription result
+        """
+        def transcribe_task():
+            temp_filename = None
+            try:
+                # Create temporary audio file
+                current_dir = os.getcwd()
+                temp_filename = os.path.join(current_dir, f"chunk_{uuid.uuid4().hex}.wav")
+                
+                # Save audio frames to file
+                with wave.open(temp_filename, 'wb') as wf:
+                    wf.setnchannels(self.channels)
+                    wf.setsampwidth(pyaudio.PyAudio().get_sample_size(self.audio_format))
+                    wf.setframerate(self.rate)
+                    wf.writeframes(b''.join(audio_frames))
+                
+                # Transcribe the audio
+                audio_data = self.load_audio_data(temp_filename)
+                
+                # Handle both faster-whisper and standard whisper
+                if self.using_faster_whisper:
+                    segments, info = self.model.transcribe(audio_data, language="en")
+                    transcribed_text = " ".join([segment.text for segment in segments]).strip()
+                else:
+                    result = self.model.transcribe(audio_data, language="en")
+                    transcribed_text = result["text"].strip()
+                
+                return transcribed_text
+                
+            except Exception as e:
+                print(f"❌ Error transcribing chunk: {e}")
+                return ""
+            finally:
+                # Clean up temp file
+                if temp_filename and os.path.exists(temp_filename):
+                    try:
+                        os.remove(temp_filename)
+                    except:
+                        pass
+        
+        return self.transcription_executor.submit(transcribe_task)
     
     def calculate_confidence_score(self, transcription: str, wake_word: str, position: int) -> int:
         """
@@ -874,13 +1044,15 @@ class SpeechToText:
             # Load audio data directly (bypassing Whisper's FFmpeg dependency)
             audio_data = self.load_audio_data(audio_file_path)
             
-            # Transcribe using English only
-            result = self.model.transcribe(
-                audio_data,
-                language="en"  # Force English for optimal accuracy
-            )
-            
-            transcribed_text = result["text"].strip()
+            # Transcribe using English only - handle both faster-whisper and standard whisper
+            if self.using_faster_whisper:
+                # faster-whisper returns segments and info
+                segments, info = self.model.transcribe(audio_data, language="en")
+                transcribed_text = " ".join([segment.text for segment in segments]).strip()
+            else:
+                # Standard whisper returns dict with text
+                result = self.model.transcribe(audio_data, language="en")
+                transcribed_text = result["text"].strip()
             
             # Debug: Check if we got any result
             if not transcribed_text:
@@ -895,11 +1067,12 @@ class SpeechToText:
                     amplified_audio = audio_data * 10  # Amplify by 10x
                     amplified_audio = np.clip(amplified_audio, -1.0, 1.0)  # Prevent clipping
                     
-                    result = self.model.transcribe(
-                        amplified_audio,
-                        language="en"
-                    )
-                    transcribed_text = result["text"].strip()
+                    if self.using_faster_whisper:
+                        segments, info = self.model.transcribe(amplified_audio, language="en")
+                        transcribed_text = " ".join([segment.text for segment in segments]).strip()
+                    else:
+                        result = self.model.transcribe(amplified_audio, language="en")
+                        transcribed_text = result["text"].strip()
                     
                     if transcribed_text:
                         print("✅ Amplification helped!")
@@ -1140,7 +1313,11 @@ class SpeechToText:
                                 if current_time - last_speech_time > 2.0:  # 2 second gap required
                                     speech_detected = True
                                     speech_start_time = current_time  # Track when recording started
-                                    speech_frames = audio_buffer.copy()  # Include pre-speech audio
+                                    
+                                    # Start fresh - only include recent audio buffer (not old data from previous interaction)
+                                    # Only keep the last few frames (pre-roll), not the entire buffer
+                                    pre_roll_frames = min(10, len(audio_buffer))  # Keep last ~250ms of audio
+                                    speech_frames = list(audio_buffer)[-pre_roll_frames:] if audio_buffer else []
                                     
                                     if self.enable_vad:
                                         print("🎤 Speech detected (VAD confirmed), recording...")
@@ -1175,15 +1352,43 @@ class SpeechToText:
                             silence_count += 1
                             speech_frames.append(data)
                             
-                            # If we've had enough silence, process the speech
-                            if silence_count > 60:  # Increased to 60 (about 1.5 seconds of silence for more complete speech)
-                                print("🔄 Processing speech...")
-                                self._process_speech_chunk(speech_frames)
-                                speech_detected = False
-                                speech_frames = []
-                                silence_count = 0
-                                last_speech_time = current_time  # Update last speech time
-                                vad_speech_frames = 0
+                            # Use chunked transcription if enabled, otherwise use traditional approach
+                            if self.enable_chunked_transcription:
+                                # Chunked mode: Trigger on short pause (300ms = 12 frames)
+                                short_pause_threshold = 12
+                                
+                                if silence_count > short_pause_threshold:
+                                    print(f"⚡ Short pause detected ({short_pause_threshold * 25}ms), starting chunked processing...")
+                                    # Pass the stream so we can continue listening
+                                    self._process_speech_with_chunking(speech_frames, stream)
+                                    speech_detected = False
+                                    speech_frames = []
+                                    silence_count = 0
+                                    last_speech_time = current_time
+                                    vad_speech_frames = 0
+                                    # Clear audio buffer to prevent contamination from this interaction
+                                    audio_buffer.clear()
+                            else:
+                                # Traditional mode: Dynamic silence threshold
+                                # Short commands get faster cutoff, longer speech gets more patience
+                                if len(speech_frames) < 80:  # Less than 2 seconds of speech
+                                    dynamic_threshold = 30  # 750ms silence (fast for quick commands)
+                                elif len(speech_frames) < 200:  # 2-5 seconds of speech
+                                    dynamic_threshold = 40  # 1000ms silence (balanced)
+                                else:  # Long speech (5+ seconds)
+                                    dynamic_threshold = 50  # 1250ms silence (patient)
+                                
+                                # If we've had enough silence, process the speech
+                                if silence_count > dynamic_threshold:
+                                    print(f"🔄 Processing speech (after {dynamic_threshold * 25}ms silence)...")
+                                    self._process_speech_chunk(speech_frames)
+                                    speech_detected = False
+                                    speech_frames = []
+                                    silence_count = 0
+                                    last_speech_time = current_time  # Update last speech time
+                                    vad_speech_frames = 0
+                                    # Clear audio buffer to prevent contamination from this interaction
+                                    audio_buffer.clear()
                     
                     # Check for engagement timeout (false positive detection)
                     if self.track_metrics:
@@ -1204,6 +1409,193 @@ class SpeechToText:
                 audio.terminate()
             except:
                 pass
+
+    def _process_speech_with_chunking(self, initial_frames, stream):
+        """
+        Process speech with dynamic chunking and parallel transcription.
+        This method transcribes chunks in parallel as the user continues speaking.
+        
+        Strategy:
+        - On SHORT_PAUSE (300ms): Stop current chunk, start transcription, begin new recording
+        - Continue recording new chunk for up to REMAINING_PAUSE (700ms more = 1000ms total)
+        - If new speech detected: Keep chunk, repeat process
+        - If no speech: Discard empty chunk, finalize
+        
+        :param initial_frames: Initial audio frames for first chunk
+        :param stream: Active audio stream to continue listening
+        """
+        # Configurable thresholds
+        SHORT_PAUSE_MS = 300   # After this, transcribe chunk and start new recording
+        LONG_PAUSE_MS = 1000   # Total silence before considering user done
+        REMAINING_PAUSE_MS = LONG_PAUSE_MS - SHORT_PAUSE_MS  # 700ms more to wait
+        
+        chunks = []  # Store (audio_frames, transcript_future) tuples
+        chunk_num = 1
+        max_chunks = 10  # Prevent infinite loops
+        
+        # Start transcribing first chunk in background
+        print(f"⚡ Chunk #{chunk_num}: Starting parallel transcription...")
+        first_future = self._transcribe_audio_chunk_async(initial_frames)
+        chunks.append((initial_frames.copy(), first_future))
+        
+        # Convert to frame counts (each frame = 25ms)
+        short_pause_frames = SHORT_PAUSE_MS // 25
+        remaining_pause_frames = REMAINING_PAUSE_MS // 25
+        
+        while chunk_num < max_chunks:
+            # Start recording next potential chunk
+            current_chunk_frames = []
+            silence_count = 0
+            speech_detected_in_chunk = False
+            
+            # Listen for up to 700ms more (total 1000ms from last speech)
+            while silence_count < remaining_pause_frames:
+                try:
+                    data = stream.read(self.chunk, exception_on_overflow=False)
+                    audio_chunk = np.frombuffer(data, dtype=np.int16)
+                    volume = np.sqrt(np.mean(audio_chunk.astype(np.float32)**2))
+                    
+                    current_chunk_frames.append(data)
+                    
+                    # Check if this is speech
+                    if volume > 300:  # Volume threshold
+                        is_speech = self._is_speech_vad(data)
+                        if is_speech:
+                            # Speech detected! This chunk has content
+                            speech_detected_in_chunk = True
+                            silence_count = 0
+                        else:
+                            # Not speech according to VAD
+                            silence_count += 1
+                    else:
+                        # Below volume threshold
+                        silence_count += 1
+                    
+                    # If we have speech and hit another short pause, split again
+                    if speech_detected_in_chunk and silence_count >= short_pause_frames:
+                        print(f"   ⏸ Short pause detected ({SHORT_PAUSE_MS}ms) after speech in chunk #{chunk_num + 1}")
+                        # Keep this chunk and start a new one
+                        chunk_num += 1
+                        print(f"⚡ Chunk #{chunk_num}: Starting parallel transcription...")
+                        future = self._transcribe_audio_chunk_async(current_chunk_frames)
+                        chunks.append((current_chunk_frames.copy(), future))
+                        
+                        # Reset for next chunk
+                        current_chunk_frames = []
+                        silence_count = 0
+                        speech_detected_in_chunk = False
+                        continue
+                    
+                    time.sleep(0.01)
+                    
+                except Exception as e:
+                    print(f"❌ Error listening for more speech: {e}")
+                    break
+            
+            # Exited the loop - check why
+            if speech_detected_in_chunk:
+                # We have speech but hit the 700ms remaining pause limit
+                # This means total pause is now 1000ms - user is done
+                print(f"✅ Long pause detected ({LONG_PAUSE_MS}ms total), user done speaking.")
+                chunk_num += 1
+                print(f"⚡ Chunk #{chunk_num} (final): Starting transcription...")
+                future = self._transcribe_audio_chunk_async(current_chunk_frames)
+                chunks.append((current_chunk_frames.copy(), future))
+                break
+            else:
+                # No speech detected in this chunk - it's just silence
+                print(f"✅ No more speech detected ({LONG_PAUSE_MS}ms total silence), finalizing...")
+                # Discard this empty chunk
+                break
+        
+        # Wait for all transcriptions to complete and combine
+        print(f"🔄 Waiting for {len(chunks)} chunk(s) to finish transcribing...")
+        transcripts = []
+        
+        for i, (frames, future) in enumerate(chunks):
+            try:
+                transcript = future.result(timeout=10.0)  # 10 second timeout
+                if transcript:
+                    transcripts.append(transcript)
+                    print(f"   ✓ Chunk #{i+1}: \"{transcript[:50]}{'...' if len(transcript) > 50 else ''}\"")
+            except Exception as e:
+                print(f"   ✗ Chunk #{i+1}: Transcription failed - {e}")
+        
+        # Combine all chunks with intelligent cleanup
+        full_transcript = self._clean_chunked_transcript(transcripts).lower()
+        
+        if not full_transcript:
+            print("⚠️ No valid transcription from chunks")
+            # Clean up chunks before returning
+            chunks.clear()
+            return
+        
+        print(f"📝 Combined transcript: \"{full_transcript}\"")
+        print(f"   (Cleaned from {len(transcripts)} chunk(s))")
+        
+        # Clean up chunks now that we're done with them
+        chunks.clear()
+        
+        # Now process the combined transcript normally
+        self._process_combined_transcript(full_transcript)
+    
+    def _process_combined_transcript(self, transcribed_text):
+        """Process a complete (potentially multi-chunk) transcript for wake word detection."""
+        # Check for hallucinations
+        if self.is_hallucination(transcribed_text):
+            print("⚠️ Transcription appears to be a hallucination from background noise, ignoring...")
+            if self.in_conversation:
+                self.exit_conversation_mode()
+            return
+        
+        # If we're in conversation mode, treat any speech as a command
+        if self.in_conversation:
+            print(f"💬 Follow-up detected: '{transcribed_text}'")
+            if transcribed_text and self.wake_callback:
+                if self.track_metrics and self.waiting_for_engagement:
+                    self.metrics.log_outcome(engaged=True)
+                    self.waiting_for_engagement = False
+                self.wake_callback(transcribed_text)
+            return
+        
+        # Use flexible wake word detection
+        if self.flexible_wake_word:
+            command, confidence, position = self.extract_command_with_confidence(
+                transcribed_text, 
+                self.wake_words
+            )
+            
+            if command is None:
+                if len(transcribed_text) > 3:
+                    print(f"🔇 Speech without wake word ignored: '{transcribed_text[:30]}{'...' if len(transcribed_text) > 30 else ''}'")
+                return
+            
+            # Wake word found with sufficient confidence
+            print(f"✅ Wake word detected: '{transcribed_text}' (confidence: {confidence})")
+            print(f"   Command: '{command}'")
+            
+            if self.wake_callback:
+                if self.track_metrics:
+                    self.metrics.log_activation(
+                        transcription=transcribed_text,
+                        confidence=confidence,
+                        activated=True
+                    )
+                    self.waiting_for_engagement = True
+                    self.last_activation_time = time.time()
+                
+                self.wake_callback(command)
+        else:
+            # Simple wake word matching (fallback)
+            for wake_word in self.wake_words:
+                if wake_word in transcribed_text:
+                    command = transcribed_text.replace(wake_word, "").strip()
+                    print(f"✅ Wake word '{wake_word}' detected!")
+                    print(f"   Command: '{command}'")
+                    
+                    if self.wake_callback:
+                        self.wake_callback(command)
+                    return
 
     def _process_speech_chunk(self, speech_frames):
         """Process a chunk of speech to check for wake words."""
@@ -1226,8 +1618,14 @@ class SpeechToText:
             
             # Transcribe the audio (English only)
             audio_data = self.load_audio_data(temp_filename)
-            result = self.model.transcribe(audio_data, language="en")
-            transcribed_text = result["text"].strip().lower()
+            
+            # Handle both faster-whisper and standard whisper
+            if self.using_faster_whisper:
+                segments, info = self.model.transcribe(audio_data, language="en")
+                transcribed_text = " ".join([segment.text for segment in segments]).strip().lower()
+            else:
+                result = self.model.transcribe(audio_data, language="en")
+                transcribed_text = result["text"].strip().lower()
             
             # Check for hallucinations early to avoid processing noise
             if self.is_hallucination(transcribed_text):
