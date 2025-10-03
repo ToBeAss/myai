@@ -435,7 +435,7 @@ class SpeechToText:
                     first_words = words[:2] if len(words) >= 2 else words
                     
                     # Look for actual subject pronouns or sentence connectors
-                    has_subject = any(word in first_words for word in ['i', 'you', 'he', 'she', 'it', 'we', 'they', 'also', 'and', 'but', 'sam'])
+                    has_subject = any(word in first_words for word in ['i', 'you', 'he', 'she', 'it', 'we', 'they', 'also', 'and', 'but'])
                     
                     # Fragments starting with "what", "where", etc. without subject = continuation
                     # e.g., "what the weather" is part of "know what the weather"
@@ -1528,6 +1528,8 @@ class SpeechToText:
             print("⚠️ No valid transcription from chunks")
             # Clean up chunks before returning
             chunks.clear()
+            # Mark that speech processing is complete
+            self.speech_being_processed = False
             return
         
         print(f"📝 Combined transcript: \"{full_transcript}\"")
@@ -1538,6 +1540,9 @@ class SpeechToText:
         
         # Now process the combined transcript normally
         self._process_combined_transcript(full_transcript)
+        
+        # Mark that speech processing is complete (critical for conversation timer)
+        self.speech_being_processed = False
     
     def _process_combined_transcript(self, transcribed_text):
         """Process a complete (potentially multi-chunk) transcript for wake word detection."""
