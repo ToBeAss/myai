@@ -158,6 +158,7 @@ class Agent:
             f"<tool_results>\n{formatted_tool_results}{formatted_data}</tool_results>\n\n"
             "<response_guidelines>Respond to `current_query` based on your instructions and relevant context, including conversation history and the results of any tools, without repeating yourself.</response_guidelines>"
         )
+        #print(f"\n--- Structured Prompt ---\n{prompt}\n--- End of Prompt ---\n")  # Debugging purposes
         return prompt
     
 
@@ -261,7 +262,7 @@ class Agent:
             #print(prompt)  # Debugging purposes
             if tool_results: print(Tool.format_tool_calls_short(tool_results))  # Debugging purposes
             result = self._llm.invoke(prompt, use_tools=True)
-            print(f"🤖{self.name}: {result.content}")  # Print the llm's response
+            # print(f"🤖{self.name}: {result.content}")  # Print the llm's response
 
             # Store results in memory if available
             if result.response_metadata and result.content:

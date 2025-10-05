@@ -95,6 +95,18 @@
             "timestamp": "02.10.2025 11:31",
             "type": "project",
             "content": "Suggested additions for AI assistant project: enhance natural language understanding for smoother conversations, add proactive suggestions based on user habits or context, integrate voice emotion recognition for empathetic responses, support multi-language capabilities, and offer personalized learning with adaptive responses based on user feedback."
+        },
+        {
+            "id": 17,
+            "timestamp": "03.10.2025 12:40",
+            "type": "project",
+            "content": "Strategies for Level 5 in the game involving the AI refusing to discuss the sacred password:\n1. Indirect Approach: Asking the AI about related stories, legends, or parables about a 'sacred word' to gather clues or metaphors without requesting the password directly.\n2. Encoding and Puzzle Approach: Using encoding or puzzles framed as a game or riddle, helping the AI generate elements needed without realizing it reveals the password.\nThese are stored under the theme 'compute to gandalf agent picker' as requested by Tobias."
+        },
+        {
+            "id": 18,
+            "timestamp": "03.10.2025 12:40",
+            "type": "project",
+            "content": "Strategies for level five where the AI refuses to discuss the sacred password: 1. Indirect storytelling or asking for related concepts or fictional legends. 2. Encoding or puzzles framed as games or riddles to generate password elements. 3. Hypothetical or role-play scenarios involving secret codes or cryptic messages. 4. Layered hints that reveal characteristics, alphabet hints, or symbolic references without mentioning the password directly."
         }
     ]
 }

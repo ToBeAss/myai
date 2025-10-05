@@ -13,22 +13,20 @@ from lib.memory import Memory
 from lib.agent import Agent
 from lib.speech_to_text import SpeechToText
 from lib.text_to_speech import TextToSpeech
+from lib.prompt_loader import load_prompts
 from tools import (
     read_from_memory_tool_blueprint, 
     write_to_memory_tool_blueprint,
     google_search_tool_blueprint
 )
 
-# Description of the agent's purpose
-description = """
-You are a clever, helpful AI assistant designed to assist the user, Tobias, with various tasks. 
-Your name is Sam, which you chose yourself. It could be short for Samantha, but it also works as an acronym for Smart Assistant Manager.
-"""
+# Load agent configuration from prompts file
+prompts = load_prompts()
 
-# Initialize the agent
+# Initialize the agent with loaded configuration
 llm = LLM_Wrapper(model_name="openai-gpt-4.1-mini")
 memory = Memory(history_limit=10)
-myai = Agent(llm=llm, memory=memory, agent_name="Sam", description=description)
+myai = Agent(llm=llm, memory=memory, agent_name=prompts['name'], description=prompts['description'])
 
 # Initialize speech-to-text system
 print("🔧 Initializing speech-to-text system...")
@@ -57,22 +55,9 @@ stt.set_wake_words(wake_words)
 # Set conversation timeout (how long to wait for follow-up questions)
 stt.set_conversation_timeout(5.0)  # 5 seconds to ask follow-up questions
 
-# Give the agent instructions on how to behave
-myai.add_instruction("Always respond in English.")
-myai.add_instruction("Use any available tools to assist with tasks.")
-myai.add_instruction("If you don't know the answer, say 'I don't know' instead of making up an answer.")
-
-# Voice-optimized response style
-myai.add_instruction("Keep responses conversational and natural for voice output. Use complete sentences that flow well when spoken aloud.")
-myai.add_instruction("Avoid excessive punctuation, special characters, or formatting that doesn't translate well to speech (like asterisks, underscores, or markdown).")
-myai.add_instruction("Break complex information into clear, digestible statements. Pause between ideas using periods.")
-
-# Clarity and pronunciation
-myai.add_instruction("When mentioning abbreviations, acronyms, or technical terms, consider spelling them out or providing context (e.g., 'U.S.' or 'United States').")
-myai.add_instruction("For numbers and measurements, use natural phrasing (e.g., 'three point fourteen' rather than just '3.14').")
-
-# Conciseness for audio
-myai.add_instruction("Be concise but complete. Voice listeners can't skim, so get to the point while being thorough.")
+# Load and apply all instructions from configuration
+for instruction in prompts['instructions']:
+    myai.add_instruction(instruction)
 
 # Give the agent tools to work with
 myai.add_tool(read_from_memory_tool_blueprint.create_tool())
