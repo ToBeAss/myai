@@ -100,7 +100,7 @@ def handle_voice_command(command_text):
     # Stream the response with real-time TTS (speaks as it generates)
     # Using optimized parameters for faster response with natural pauses at commas
     print("🤖: ", end="", flush=True)
-    tts.speak_streaming_async(response_generator, chunk_on=",.!?", print_text=True, min_chunk_size=10)
+    tts.speak_streaming_async(response_generator, chunk_on=",.!?—", print_text=True, min_chunk_size=30)
     print()
     
     # Enter conversation mode to allow follow-up questions

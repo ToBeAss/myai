@@ -84,7 +84,7 @@ while True:
         # Voice mode: collect response and speak it
         response_generator = myai.stream(user_input=user_input)
         print("🤖: ", end="", flush=True)
-        tts.speak_streaming_async(response_generator, chunk_on=",.!?", print_text=True, min_chunk_size=10)
+        tts.speak_streaming_async(response_generator, chunk_on=",.!?—", print_text=True, min_chunk_size=30)
         print()
     else:
         # Text-only mode: stream to console

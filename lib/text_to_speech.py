@@ -228,6 +228,58 @@ class TextToSpeech:
         # Default: treat as sentence boundary if followed by space and not obviously wrong
         return bool(re.match(r'^\s+[A-Z]', after))
     
+    def _is_weak_comma(self, text: str, position: int) -> bool:
+        """
+        Check if a comma at the given position is a 'weak' comma that shouldn't chunk.
+        Weak commas are those that should stay connected for natural speech flow.
+        
+        :param text: The full text
+        :param position: Position of the comma
+        :return: True if it's a weak comma (skip chunking), False otherwise
+        """
+        # Get text before and after the comma
+        before = text[:position].strip().lower()
+        after = text[position+1:].strip()
+        
+        # Skip if comma is in numbers (e.g., "1,000")
+        if after and re.match(r'^\s*\d', after):
+            return True
+        
+        # Skip multiple commas or comma at start
+        if position == 0 or (position > 0 and text[position-1] == ','):
+            return True
+        
+        # Get the last few words before the comma
+        before_words = before.split()
+        if len(before_words) > 0:
+            last_word = before_words[-1].lower()
+            
+            # Skip commas after conjunctions (should flow together)
+            if last_word in ['and', 'but', 'or', 'so', 'yet', 'nor']:
+                return True
+        
+        # Get the first few words after the comma
+        after_words = after.split()
+        if len(after_words) > 0:
+            first_word = after_words[0]
+            
+            # Skip commas before common names/titles (vocative commas)
+            # This catches patterns like "..., Tobias" or "..., sir"
+            # Check if first word is capitalized (likely a name) or a title
+            if first_word[0].isupper() or first_word.lower() in ['sir', 'ma\'am', 'miss', 'mr', 'mrs', 'ms', 'dr']:
+                return True
+        
+        # Check for short phrases between commas (less than 15 chars)
+        # Find previous comma or start
+        prev_comma = text[:position].rfind(',')
+        if prev_comma == -1:
+            prev_comma = 0
+        phrase_length = position - prev_comma
+        if phrase_length < 15:
+            return True
+        
+        return False
+    
     def _find_sentence_boundary(self, text: str, chunk_chars: str = ".!?") -> int:
         """
         Find the position of the last valid sentence boundary in text.
@@ -246,15 +298,15 @@ class TextToSpeech:
                     if self._is_sentence_boundary(text, i):
                         last_valid_boundary = i
                 elif char == ',':
-                    # Commas are natural pause points for speech
-                    # Skip if followed by space and number (like "1,000")
-                    after = text[i+1:] if i+1 < len(text) else ""
-                    if after and re.match(r'^\s*\d', after):
-                        continue  # Skip comma in numbers
-                    # Skip multiple commas or comma at start
-                    if i == 0 or (i > 0 and text[i-1] == ','):
-                        continue
-                    last_valid_boundary = i
+                    # Commas are natural pause points, but be selective
+                    if not self._is_weak_comma(text, i):
+                        last_valid_boundary = i
+                elif char == '—':
+                    # Em dash is a natural pause point (stronger than comma)
+                    # Make sure it's not a regular hyphen by checking it's the em dash character
+                    # Skip if it's at the start or followed by another em dash
+                    if i > 0 and (i + 1 >= len(text) or text[i + 1] != '—'):
+                        last_valid_boundary = i
                 else:
                     # ! and ? are almost always sentence boundaries
                     # But check for emoticons and multiple punctuation
