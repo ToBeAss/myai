@@ -1,6 +1,8 @@
 # myai
 My personal AI assistant
 
+> Looking for architecture, feature breakdowns, or optimization notes? Start with [`docs/system_overview.md`](docs/system_overview.md). Detailed legacy write-ups now live under [`docs/archive/`](docs/archive/ARCHIVE_INDEX.md).
+
 ## Installation Instructions
 
 ### Prerequisites:
@@ -60,7 +62,7 @@ This voice assistant is **highly optimized** for low-latency responses:
 Transcribes speech in parallel chunks while you continue speaking.
 - **300-1200ms faster** response time for multi-phrase commands
 - Automatically enabled in `main_continuous.py`
-- See: [`CHUNKED_TRANSCRIPTION_QUICKREF.md`](CHUNKED_TRANSCRIPTION_QUICKREF.md)
+- See the quick overview in [`docs/system_overview.md`](docs/system_overview.md) and the archived deep dive in [`docs/archive/CHUNKED_TRANSCRIPTION_QUICKREF.md`](docs/archive/CHUNKED_TRANSCRIPTION_QUICKREF.md)
 
 ### 🎯 Other Optimizations
 - **faster-whisper**: 4-5x faster transcription with CTranslate2
@@ -70,7 +72,7 @@ Transcribes speech in parallel chunks while you continue speaking.
 
 **Combined result**: ~2-3 seconds faster than baseline! 🎉
 
-For details, see: [`LATENCY_OPTIMIZATION_SETTINGS.md`](LATENCY_OPTIMIZATION_SETTINGS.md)
+For configuration specifics, see [`docs/system_overview.md`](docs/system_overview.md) and the archived reference [`docs/archive/LATENCY_OPTIMIZATION_SETTINGS.md`](docs/archive/LATENCY_OPTIMIZATION_SETTINGS.md)
 
 ## Environment Management
 * **Deactivate the virtual environment** (when done)
