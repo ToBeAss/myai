@@ -228,7 +228,8 @@ class SpeechToText:
                  false_positive_timeout: float = 10.0,
                  enable_vad: bool = True,
                  vad_aggressiveness: int = 2,
-                 use_faster_whisper: bool = True):
+                 use_faster_whisper: bool = True,
+                 vocabulary_hints: str = "Tobias, Sam, hey Sam, weather, temperature, time, reminder, search"):
         """
         Initialize the speech-to-text system.
         
@@ -242,6 +243,7 @@ class SpeechToText:
         :param enable_vad: Enable WebRTC Voice Activity Detection for noise filtering
         :param vad_aggressiveness: VAD filtering level (0=liberal, 1=moderate, 2=balanced, 3=aggressive)
         :param use_faster_whisper: Use optimized faster-whisper backend if available (4-5x faster)
+        :param vocabulary_hints: Comma-separated common words/phrases to improve recognition (initial_prompt)
         """
         print(f"🎤 Loading Whisper '{model_size}' model... This might take a moment on first run.")
         try:
@@ -329,6 +331,9 @@ class SpeechToText:
             self.enable_chunked_transcription = False  # Can be enabled after init
             self.transcription_chunks = []  # Store chunk futures
             self.chunk_lock = threading.Lock()  # Thread-safe chunk access
+            
+            # Vocabulary hints for improved recognition
+            self.vocabulary_hints = vocabulary_hints
             
             print("✅ Speech-to-text system ready!")
             print("🇬🇧 Language: English only (for optimal accuracy)")
@@ -508,10 +513,10 @@ class SpeechToText:
                 
                 # Handle both faster-whisper and standard whisper
                 if self.using_faster_whisper:
-                    segments, info = self.model.transcribe(audio_data, language="en")
+                    segments, info = self.model.transcribe(audio_data, language="en", initial_prompt=self.vocabulary_hints)
                     transcribed_text = " ".join([segment.text for segment in segments]).strip()
                 else:
-                    result = self.model.transcribe(audio_data, language="en")
+                    result = self.model.transcribe(audio_data, language="en", initial_prompt=self.vocabulary_hints)
                     transcribed_text = result["text"].strip()
                 
                 return transcribed_text
@@ -1047,11 +1052,11 @@ class SpeechToText:
             # Transcribe using English only - handle both faster-whisper and standard whisper
             if self.using_faster_whisper:
                 # faster-whisper returns segments and info
-                segments, info = self.model.transcribe(audio_data, language="en")
+                segments, info = self.model.transcribe(audio_data, language="en", initial_prompt=self.vocabulary_hints)
                 transcribed_text = " ".join([segment.text for segment in segments]).strip()
             else:
                 # Standard whisper returns dict with text
-                result = self.model.transcribe(audio_data, language="en")
+                result = self.model.transcribe(audio_data, language="en", initial_prompt=self.vocabulary_hints)
                 transcribed_text = result["text"].strip()
             
             # Debug: Check if we got any result
@@ -1068,10 +1073,10 @@ class SpeechToText:
                     amplified_audio = np.clip(amplified_audio, -1.0, 1.0)  # Prevent clipping
                     
                     if self.using_faster_whisper:
-                        segments, info = self.model.transcribe(amplified_audio, language="en")
+                        segments, info = self.model.transcribe(amplified_audio, language="en", initial_prompt=self.vocabulary_hints)
                         transcribed_text = " ".join([segment.text for segment in segments]).strip()
                     else:
-                        result = self.model.transcribe(amplified_audio, language="en")
+                        result = self.model.transcribe(amplified_audio, language="en", initial_prompt=self.vocabulary_hints)
                         transcribed_text = result["text"].strip()
                     
                     if transcribed_text:
@@ -1626,10 +1631,10 @@ class SpeechToText:
             
             # Handle both faster-whisper and standard whisper
             if self.using_faster_whisper:
-                segments, info = self.model.transcribe(audio_data, language="en")
+                segments, info = self.model.transcribe(audio_data, language="en", initial_prompt=self.vocabulary_hints)
                 transcribed_text = " ".join([segment.text for segment in segments]).strip().lower()
             else:
-                result = self.model.transcribe(audio_data, language="en")
+                result = self.model.transcribe(audio_data, language="en", initial_prompt=self.vocabulary_hints)
                 transcribed_text = result["text"].strip().lower()
             
             # Check for hallucinations early to avoid processing noise

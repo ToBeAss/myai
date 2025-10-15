@@ -56,9 +56,21 @@ class LLM_Wrapper:
                 azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT"),
                 **kwargs # Pass additional parameters
             )
+        elif model_name == "openai-gpt-4.1":
+            return ChatOpenAI(
+                model_name = "gpt-4.1",
+                api_key = os.getenv("OPENAI_API_KEY"),
+                **kwargs # Pass additional parameters
+            )
         elif model_name == "openai-gpt-4.1-mini":
             return ChatOpenAI(
                 model_name = "gpt-4.1-mini",
+                api_key = os.getenv("OPENAI_API_KEY"),
+                **kwargs # Pass additional parameters
+            )
+        elif model_name == "openai-gpt-4.1-nano":
+            return ChatOpenAI(
+                model_name = "gpt-4.1-nano",
                 api_key = os.getenv("OPENAI_API_KEY"),
                 **kwargs # Pass additional parameters
             )
