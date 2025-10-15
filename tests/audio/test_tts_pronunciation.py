@@ -5,9 +5,14 @@ This helps identify if the issue is with the TTS voice model itself.
 """
 
 import sys
-sys.path.insert(0, '/Users/tobiasmolland/GitHub/myai')
+from pathlib import Path
 
-from lib.text_to_speech import TextToSpeech
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SRC_PATH = PROJECT_ROOT / "src"
+if SRC_PATH.exists():
+    sys.path.insert(0, str(SRC_PATH))
+
+from myai.tts.text_to_speech import TextToSpeech
 
 def test_tts_pronunciation():
     """Test how Google TTS pronounces different number formats."""

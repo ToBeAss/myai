@@ -1,10 +1,17 @@
 import argparse
+from pathlib import Path
+import sys
 from typing import List, Tuple
 
-from lib.llm_wrapper import LLM_Wrapper
-from lib.memory import Memory
-from lib.agent import Agent
-from lib.prompt_loader import load_prompts
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SRC_PATH = PROJECT_ROOT / "src"
+if SRC_PATH.exists():
+    sys.path.insert(0, str(SRC_PATH))
+
+from myai.llm.llm_wrapper import LLM_Wrapper
+from myai.llm.memory import Memory
+from myai.llm.agent import Agent
+from myai.llm.prompt_loader import load_prompts
 from tools import (
     read_from_memory_tool_blueprint,
     write_to_memory_tool_blueprint,

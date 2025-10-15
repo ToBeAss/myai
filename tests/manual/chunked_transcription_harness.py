@@ -1,10 +1,13 @@
 """
-Test script for chunked transcription performance.
-Compares traditional vs chunked transcription timing.
+Manual chunked transcription performance harness.
+
+The script exercises the live transcription pipeline and requires microphone
+input. Execute it directly via `python tests/manual/chunked_transcription_harness.py`
+when you want to profile live chunked transcription.
 """
 
 import time
-from lib.speech_to_text import SpeechToText
+from myai.stt.speech_to_text import SpeechToText
 
 print("="*80)
 print("🧪 CHUNKED TRANSCRIPTION TEST")
@@ -55,42 +58,43 @@ print("\nTest 3: Long statement with thinking pauses")
 print('  Say: "Sam, I need to know" [pause] "what the weather" [pause] "will be like tomorrow"')
 print("  Expected: Much faster! All early chunks transcribe in parallel")
 
-print("\nPress ENTER when ready to start...")
-input()
+if __name__ == "__main__":
+    print("\nPress ENTER when ready to start...")
+    input()
 
-# Start listening
-print("\n🎧 Listening for wake word...")
-print("💡 Say your test commands now!")
-print("   (Press Ctrl+C when done testing)")
-print()
+    # Start listening
+    print("\n🎧 Listening for wake word...")
+    print("💡 Say your test commands now!")
+    print("   (Press Ctrl+C when done testing)")
+    print()
 
-test_start = time.time()
+    test_start = time.time()
 
-try:
-    stt.start_continuous_listening(test_callback)
-    
-    # Keep running
-    while True:
-        time.sleep(1)
-        
-except KeyboardInterrupt:
-    print("\n\n🛑 Stopping test...")
-    stt.stop_continuous_listening()
-    
-    # Print summary
-    print("\n" + "="*80)
-    print("📊 TEST SUMMARY")
-    print("="*80)
-    print(f"\nTotal activations: {len(activations)}")
-    
-    for i, activation in enumerate(activations, 1):
-        print(f"\n{i}. Command: '{activation['command']}'")
-        print(f"   Time from start: {activation['time'] - test_start:.2f}s")
-    
-    print("\n💡 OBSERVATIONS:")
-    print("  • Did multi-phrase commands respond faster?")
-    print("  • Did you notice chunks being transcribed in parallel?")
-    print("  • Were there any issues with chunk combining?")
-    print("\n" + "="*80)
-    
-    print("\n👋 Test complete!")
+    try:
+        stt.start_continuous_listening(test_callback)
+
+        # Keep running
+        while True:
+            time.sleep(1)
+
+    except KeyboardInterrupt:
+        print("\n\n🛑 Stopping test...")
+        stt.stop_continuous_listening()
+
+        # Print summary
+        print("\n" + "="*80)
+        print("📊 TEST SUMMARY")
+        print("="*80)
+        print(f"\nTotal activations: {len(activations)}")
+
+        for i, activation in enumerate(activations, 1):
+            print(f"\n{i}. Command: '{activation['command']}'")
+            print(f"   Time from start: {activation['time'] - test_start:.2f}s")
+
+        print("\n💡 OBSERVATIONS:")
+        print("  • Did multi-phrase commands respond faster?")
+        print("  • Did you notice chunks being transcribed in parallel?")
+        print("  • Were there any issues with chunk combining?")
+        print("\n" + "="*80)
+
+        print("\n👋 Test complete!")

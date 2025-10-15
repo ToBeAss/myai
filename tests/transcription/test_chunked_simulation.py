@@ -6,7 +6,7 @@ Tests the logic without requiring actual speech input.
 import time
 import threading
 from unittest.mock import Mock, MagicMock
-import sys
+from myai.stt.speech_to_text import SpeechToText
 
 print("="*80)
 print("🧪 CHUNKED TRANSCRIPTION SIMULATION TEST")

@@ -10,10 +10,10 @@ Run this to get solid proof that parallel processing is working.
 """
 
 import time
-from lib.llm_wrapper import LLM_Wrapper
-from lib.agent import Agent
-from lib.memory import Memory
-from lib.text_to_speech import TextToSpeech
+from myai.llm.llm_wrapper import LLM_Wrapper
+from myai.llm.agent import Agent
+from myai.llm.memory import Memory
+from myai.tts.text_to_speech import TextToSpeech
 
 def test_streaming_with_timing():
     """Test to verify parallel TTS processing with detailed timing."""

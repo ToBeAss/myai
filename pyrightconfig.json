@@ -1,0 +1,5 @@
+{
+  "include": ["src", "tests", "main.py", "main_continuous.py"],
+  "extraPaths": ["src"],
+  "reportMissingImports": true
+}

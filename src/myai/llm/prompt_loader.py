@@ -3,12 +3,18 @@ Prompt configuration loader for the AI agent.
 Loads agent descriptions and instructions from YAML configuration files.
 """
 
-import yaml
 import os
-from typing import Dict, List, Any
+from pathlib import Path
+from typing import Dict, List, Any, Optional, Union
+
+import yaml
 
 
-def load_prompts(config_path: str = None) -> Dict[str, Any]:
+REPO_ROOT = Path(__file__).resolve().parents[3]
+PROMPTS_DIR = REPO_ROOT / "prompts"
+
+
+def load_prompts(config_path: Optional[Union[Path, str]] = None) -> Dict[str, Any]:
     """
     Load agent prompts and configuration from a YAML file.
     
@@ -28,18 +34,17 @@ def load_prompts(config_path: str = None) -> Dict[str, Any]:
     """
     # Default to sam_config.yaml in the prompts directory
     if config_path is None:
-        # Get the project root directory (parent of lib directory)
-        lib_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.dirname(lib_dir)
-        config_path = os.path.join(project_root, 'prompts', 'sam_config.yaml')
+        config_path = PROMPTS_DIR / "sam_config.yaml"
     
+    config_path = Path(config_path)
+
     # Check if file exists
-    if not os.path.exists(config_path):
+    if not config_path.exists():
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
     
     # Load YAML file
     try:
-        with open(config_path, 'r', encoding='utf-8') as file:
+        with config_path.open('r', encoding='utf-8') as file:
             config = yaml.safe_load(file)
     except yaml.YAMLError as e:
         raise yaml.YAMLError(f"Error parsing YAML configuration: {e}")
@@ -61,7 +66,7 @@ def load_prompts(config_path: str = None) -> Dict[str, Any]:
     }
 
 
-def load_instructions_by_category(config_path: str = None) -> Dict[str, List[str]]:
+def load_instructions_by_category(config_path: Optional[Union[Path, str]] = None) -> Dict[str, List[str]]:
     """
     Load instructions organized by category for more granular control.
     
@@ -72,14 +77,14 @@ def load_instructions_by_category(config_path: str = None) -> Dict[str, List[str
         Dictionary with category names as keys and instruction lists as values.
     """
     if config_path is None:
-        lib_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.dirname(lib_dir)
-        config_path = os.path.join(project_root, 'prompts', 'sam_config.yaml')
-    
-    if not os.path.exists(config_path):
+        config_path = PROMPTS_DIR / "sam_config.yaml"
+
+    config_path = Path(config_path)
+
+    if not config_path.exists():
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
-    
-    with open(config_path, 'r', encoding='utf-8') as file:
+
+    with config_path.open('r', encoding='utf-8') as file:
         config = yaml.safe_load(file)
     
     return config.get('instructions', {})

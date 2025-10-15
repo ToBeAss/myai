@@ -6,8 +6,16 @@ Usage: python check_usage.py
 
 import json
 import os
+import sys
 from datetime import datetime
-from lib.text_to_speech import TextToSpeech
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+SRC_PATH = PROJECT_ROOT / "src"
+if SRC_PATH.exists():
+    sys.path.insert(0, str(SRC_PATH))
+
+from myai.tts.text_to_speech import TextToSpeech
 
 def format_bar(percentage: float, width: int = 40) -> str:
     """Create a visual progress bar."""

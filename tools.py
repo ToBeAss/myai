@@ -1,7 +1,7 @@
 import json
 import requests
 from datetime import datetime
-from lib.tool import ToolBlueprint
+from myai.llm.tool import ToolBlueprint
 from urllib.parse import quote_plus
 import os
 

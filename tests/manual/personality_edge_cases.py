@@ -1,12 +1,15 @@
 """
-Edge Case Personality Testing for Sam
-Tests boundary scenarios, creative situations, and personality consistency
+Edge Case Personality Testing for Sam.
+
+This script is designed for manual evaluation. It drives the live agent, prints
+responses, and requires human assessment. Run manually via
+`python tests/manual/personality_edge_cases.py`.
 """
 
-from lib.llm_wrapper import LLM_Wrapper
-from lib.memory import Memory
-from lib.agent import Agent
-from lib.prompt_loader import load_prompts
+from myai.llm.llm_wrapper import LLM_Wrapper
+from myai.llm.memory import Memory
+from myai.llm.agent import Agent
+from myai.llm.prompt_loader import load_prompts
 from tools import (
     read_from_memory_tool_blueprint, 
     write_to_memory_tool_blueprint,

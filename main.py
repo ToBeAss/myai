@@ -1,17 +1,23 @@
 import sys
 import os
 import warnings
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+SRC_PATH = PROJECT_ROOT / "src"
+if SRC_PATH.exists() and str(SRC_PATH) not in sys.path:
+    sys.path.insert(0, str(SRC_PATH))
 
 # Suppress pygame warnings before pygame is imported (via text_to_speech)
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "1"  # Hide pygame greeting message
 warnings.filterwarnings("ignore", category=DeprecationWarning)  # Suppress all deprecation warnings
 warnings.filterwarnings("ignore", message=".*pkg_resources.*")  # Suppress pkg_resources warning
 
-from lib.llm_wrapper import LLM_Wrapper
-from lib.memory import Memory
-from lib.agent import Agent
-from lib.text_to_speech import TextToSpeech
-from lib.prompt_loader import load_prompts
+from myai.llm.llm_wrapper import LLM_Wrapper
+from myai.llm.memory import Memory
+from myai.llm.agent import Agent
+from myai.tts.text_to_speech import TextToSpeech
+from myai.llm.prompt_loader import load_prompts
 from tools import (
     read_from_memory_tool_blueprint, 
     write_to_memory_tool_blueprint,

@@ -22,6 +22,7 @@ import wave
 import numpy as np
 import csv
 import argparse
+import sys
 from pathlib import Path
 from contextlib import contextmanager
 from typing import Dict, List, Any, Tuple, Generator
@@ -30,12 +31,17 @@ import webrtcvad
 import tempfile
 import os
 
+PROJECT_ROOT = Path(__file__).resolve().parent
+SRC_PATH = PROJECT_ROOT / "src"
+if SRC_PATH.exists():
+    sys.path.insert(0, str(SRC_PATH))
+
 # Import pipeline components
-from lib.speech_to_text import SpeechToText
-from lib.text_to_speech import TextToSpeech
-from lib.llm_wrapper import LLM_Wrapper
-from lib.agent import Agent
-from lib.memory import Memory
+from myai.stt.speech_to_text import SpeechToText
+from myai.tts.text_to_speech import TextToSpeech
+from myai.llm.llm_wrapper import LLM_Wrapper
+from myai.llm.agent import Agent
+from myai.llm.memory import Memory
 
 
 @contextmanager
@@ -74,7 +80,7 @@ class PipelineBenchmark:
         print("\n🔧 Initializing pipeline components...")
         
         # Import prompt loader to get Sam's actual configuration
-        from lib.prompt_loader import load_prompts
+        from myai.llm.prompt_loader import load_prompts
         prompts = load_prompts()
         
         # Initialize components (EXACT same as production main_continuous.py)

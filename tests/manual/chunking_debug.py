@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
 """
-Debug script to test sentence chunking behavior.
-This helps identify if issues are from chunking logic or TTS voice interpretation.
+Manual debug script to test sentence chunking behavior.
+
+Requires interactive confirmation to play audio, so it is excluded from
+automated pytest runs. Execute directly via
+`python tests/manual/chunking_debug.py` when investigating TTS chunking.
 """
 
 import sys
-sys.path.insert(0, '/Users/tobiasmolland/GitHub/myai')
+from pathlib import Path
 
-from lib.text_to_speech import TextToSpeech
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SRC_PATH = PROJECT_ROOT / "src"
+if SRC_PATH.exists() and str(SRC_PATH) not in sys.path:
+    sys.path.insert(0, str(SRC_PATH))
+
+from myai.tts.text_to_speech import TextToSpeech
 
 def test_chunking(text):
     """Test how text would be chunked."""

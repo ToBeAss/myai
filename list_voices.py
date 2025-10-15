@@ -9,7 +9,14 @@ Examples:
 """
 
 import sys
-from lib.text_to_speech import TextToSpeech
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+SRC_PATH = PROJECT_ROOT / "src"
+if SRC_PATH.exists():
+    sys.path.insert(0, str(SRC_PATH))
+
+from myai.tts.text_to_speech import TextToSpeech
 
 def main():
     # Get language code from command line argument if provided

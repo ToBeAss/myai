@@ -1,12 +1,15 @@
 """
-Automated personality testing script for Sam
-Tests different conversation scenarios to evaluate wit, professionalism, and tone adaptation
+Personality scenarios test suite for Sam.
+
+This harness prints conversation transcripts for manual review. Run via
+`python tests/manual/personality_scenarios.py` when you want to explore
+different user interactions.
 """
 
-from lib.llm_wrapper import LLM_Wrapper
-from lib.memory import Memory
-from lib.agent import Agent
-from lib.prompt_loader import load_prompts
+from myai.llm.llm_wrapper import LLM_Wrapper
+from myai.llm.memory import Memory
+from myai.llm.agent import Agent
+from myai.llm.prompt_loader import load_prompts
 from tools import (
     read_from_memory_tool_blueprint, 
     write_to_memory_tool_blueprint,

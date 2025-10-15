@@ -4,12 +4,7 @@ Test script for flexible wake word confidence scoring.
 Tests various scenarios from the design document.
 """
 
-# Add parent directory to path to import from lib
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from lib.speech_to_text import SpeechToText
+from myai.stt.speech_to_text import SpeechToText
 
 def test_confidence_scoring():
     """Test confidence scoring with various transcription examples."""

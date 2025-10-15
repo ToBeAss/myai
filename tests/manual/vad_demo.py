@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-VAD Test Script - Demonstrates noise filtering capabilities
+VAD test script for manual validation.
 
-This script shows how VAD distinguishes between speech and non-speech audio.
-Run this to verify VAD is working before testing the full system.
+This module requires microphone input and user interaction. Execute directly
+with `python tests/manual/vad_demo.py` when you want to validate VAD behavior.
 """
 
 import webrtcvad
