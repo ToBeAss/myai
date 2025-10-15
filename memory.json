@@ -110,9 +110,45 @@
         },
         {
             "id": 19,
+            "timestamp": "06.10.2025 18:17",
+            "type": "project",
+            "content": "Tobias plans to restructure his codebase by creating an assistant class that combines agent logic, text-to-speech, and speech-to-text. This main class will oversee others, enabling features like continuous listening during speech and implementing an interrupt system. He also wants to reorganize the library directory into focused subdirectories for agent logic, LLM and tool handling, voice logic, and listening logic. The goal is to break down overly long files (like the thousand-line listening and speech files) into smaller, purpose-driven ones for better maintainability and clarity. He has more ideas to add later."
+        },
+        {
+            "id": 20,
+            "timestamp": "06.10.2025 18:22",
+            "type": "preference",
+            "content": "Tobias wants an upgraded memory system for the assistant: a JSON log of every conversation for basic recall, plus a vector storage for deeper, more nuanced memory. This system should allow saving on command or when the assistant detects something important to store. The vector store would enable checking for similar past discussions during casual conversations. It should balance rich long-term memory with a short-term buffer (like the last 10 messages) to avoid flooding the context window. This setup prioritizes deeper recall across sessions and threads beyond typical chat services, tailored for a voice assistant."
+        },
+        {
+            "id": 21,
+            "timestamp": "06.10.2025 18:25",
+            "type": "preference",
+            "content": "Discussion about Google Calendar integration preferences: Tobias wants to schedule homework tasks between 6 PM and 4 AM, logistic tasks during the day, and creative tasks in the evening. He is concerned about where to store these preferences effectively without flooding context memory or tool instructions. The agreed solution is to store preferences in a dedicated, persistent storage for dynamic retrieval, avoiding context clutter. This has been logged as a priority for memory upgrades."
+        },
+        {
+            "id": 22,
+            "timestamp": "06.10.2025 18:36",
+            "type": "personal",
+            "content": "Tobias shared concerns about symptoms that might be ADHD such as difficulty sustaining attention, impulsiveness, restlessness, and organization challenges. He acknowledged these could be common but expressed a desire to speak to a professional for diagnosis and clarity about how he works. He found value in potentially understanding the 'why' behind his thinking and working style."
+        },
+        {
+            "id": 23,
             "timestamp": "06.10.2025 20:23",
             "type": "preference",
             "content": "Explained the Eisenhower Matrix and task batching to Tobias, including how to prioritize tasks into urgent/important categories and group similar tasks together for efficiency."
+        },
+        {
+            "id": 24,
+            "timestamp": "07.10.2025 13:11",
+            "type": "preference",
+            "content": "Desired upgrades for Sam: better natural language understanding to catch Tobias's meaning instantly even when unclear, more proactive anticipation to spot needs before asked, offline mode to function without internet, smarter and quicker overall."
+        },
+        {
+            "id": 25,
+            "timestamp": "07.10.2025 13:19",
+            "type": "idea",
+            "content": "Tobias's idea about a dynamic system prompt: maintaining a core minimal instruction set for an AI model, with the ability to retrieve relevant instructions on demand via a retrieval system (like vector similarity or keyword matching) to handle new contexts or uncertainties. The approach includes merging retrieved instructions with the base prompt, balancing clarity and retrieval speed, and managing instruction overlap with pruning or ranking."
         }
     ]
 }
