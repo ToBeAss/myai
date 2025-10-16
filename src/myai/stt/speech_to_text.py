@@ -1,13 +1,12 @@
 import whisper
 import pyaudio
 import wave
-import tempfile
 import threading
 import time
 import keyboard
 import os
 import numpy as np
-from typing import Optional, Callable
+from typing import Optional, Callable, Union
 from pathlib import Path
 import struct
 import ssl
@@ -17,8 +16,7 @@ from datetime import datetime
 import warnings
 import webrtcvad
 from concurrent.futures import ThreadPoolExecutor, Future
-import uuid
-from myai.paths import data_file
+from myai.paths import data_file, unique_tmp_audio_file, TMP_AUDIO_DIR, REPO_ROOT
 
 # Try to import faster-whisper for optimized performance
 try:
@@ -497,21 +495,20 @@ class SpeechToText:
         :return: Future object containing the transcription result
         """
         def transcribe_task():
-            temp_filename = None
+            temp_filename: Optional[Path] = None
             try:
                 # Create temporary audio file
-                current_dir = os.getcwd()
-                temp_filename = os.path.join(current_dir, f"chunk_{uuid.uuid4().hex}.wav")
+                temp_filename = unique_tmp_audio_file("chunk")
                 
                 # Save audio frames to file
-                with wave.open(temp_filename, 'wb') as wf:
+                with wave.open(str(temp_filename), 'wb') as wf:
                     wf.setnchannels(self.channels)
                     wf.setsampwidth(pyaudio.PyAudio().get_sample_size(self.audio_format))
                     wf.setframerate(self.rate)
                     wf.writeframes(b''.join(audio_frames))
                 
                 # Transcribe the audio
-                audio_data = self.load_audio_data(temp_filename)
+                audio_data = self.load_audio_data(str(temp_filename))
                 
                 # Handle both faster-whisper and standard whisper
                 if self.using_faster_whisper:
@@ -528,9 +525,9 @@ class SpeechToText:
                 return ""
             finally:
                 # Clean up temp file
-                if temp_filename and os.path.exists(temp_filename):
+                if temp_filename and temp_filename.exists():
                     try:
-                        os.remove(temp_filename)
+                        temp_filename.unlink()
                     except:
                         pass
         
@@ -833,10 +830,12 @@ class SpeechToText:
             return ""
         
         # Create temporary file for audio in current working directory instead of temp
-        import uuid
-        current_dir = os.getcwd()
-        temp_filename = os.path.join(current_dir, f"myai_audio_{uuid.uuid4().hex}.wav")
-        print(f"📁 Creating audio file: {temp_filename}")
+        temp_filename = unique_tmp_audio_file("myai_audio")
+        try:
+            display_path = temp_filename.relative_to(REPO_ROOT)
+        except ValueError:
+            display_path = temp_filename
+        print(f"📁 Creating audio file: {display_path}")
         
         try:
             # Open audio stream
@@ -902,7 +901,7 @@ class SpeechToText:
         # Save recorded audio
         try:
             # Write audio data to file
-            with wave.open(temp_filename, 'wb') as wf:
+            with wave.open(str(temp_filename), 'wb') as wf:
                 wf.setnchannels(self.channels)
                 wf.setsampwidth(audio.get_sample_size(self.audio_format))
                 wf.setframerate(self.rate)
@@ -912,8 +911,8 @@ class SpeechToText:
             time.sleep(0.1)
             
             # Verify file was created and has content
-            if os.path.exists(temp_filename) and os.path.getsize(temp_filename) > 0:
-                file_size = os.path.getsize(temp_filename)
+            if temp_filename.exists() and temp_filename.stat().st_size > 0:
+                file_size = temp_filename.stat().st_size
                 print(f"✅ Audio recorded successfully: {len(frames)} frames, {file_size} bytes")
             else:
                 print("❌ Audio file was not created properly")
@@ -923,15 +922,15 @@ class SpeechToText:
             print(f"❌ Error saving audio: {e}")
             # Clean up failed file
             try:
-                if os.path.exists(temp_filename):
-                    os.unlink(temp_filename)
+                if temp_filename.exists():
+                    temp_filename.unlink()
             except:
                 pass
             return ""
         
-        return temp_filename
+        return str(temp_filename)
     
-    def load_audio_data(self, audio_file_path: str) -> np.ndarray:
+    def load_audio_data(self, audio_file_path: Union[str, Path]) -> np.ndarray:
         """
         Load audio data directly from WAV file without FFmpeg.
         
@@ -939,7 +938,8 @@ class SpeechToText:
         :return: Audio data as numpy array
         """
         try:
-            with wave.open(audio_file_path, 'rb') as wav_file:
+            wav_path = Path(audio_file_path)
+            with wave.open(str(wav_path), 'rb') as wav_file:
                 # Get audio parameters
                 sample_rate = wav_file.getframerate()
                 n_channels = wav_file.getnchannels()
@@ -947,7 +947,6 @@ class SpeechToText:
                 n_frames = wav_file.getnframes()
                 
                 print(f"📊 Audio info: {sample_rate}Hz, {n_channels}ch, {sample_width}bytes, {n_frames}frames")
-                
                 # Read raw audio data
                 raw_audio = wav_file.readframes(n_frames)
                 
@@ -992,28 +991,37 @@ class SpeechToText:
             print(f"❌ Error loading audio data: {e}")
             raise
 
-    def transcribe_audio(self, audio_file_path: str) -> str:
+    def transcribe_audio(self, audio_file_path: Union[str, Path]) -> str:
         """
         Transcribe audio file to text using Whisper.
         
         :param audio_file_path: Path to the audio file
         :return: Transcribed text
         """
+        if not audio_file_path:
+            print("❌ No audio file path provided for transcription")
+            return ""
+
+        audio_path = Path(audio_file_path).expanduser()
+        audio_path = (Path.cwd() / audio_path).resolve(strict=False)
+
         transcribed_text = ""
         try:
             print("🔄 Transcribing audio...")
-            
-            # Convert to absolute path and normalize
-            audio_file_path = os.path.abspath(audio_file_path)
-            print(f"📁 Absolute path: {audio_file_path}")
+
+            try:
+                display_path = audio_path.relative_to(REPO_ROOT)
+            except ValueError:
+                display_path = audio_path
+            print(f"📁 Absolute path: {display_path}")
             
             # Check if file exists before transcribing
-            if not os.path.exists(audio_file_path):
-                print(f"❌ Audio file not found: {audio_file_path}")
+            if not audio_path.exists():
+                print(f"❌ Audio file not found: {audio_path}")
                 # List files in temp directory for debugging
-                temp_dir = os.path.dirname(audio_file_path)
+                temp_dir = audio_path.parent
                 try:
-                    files = os.listdir(temp_dir)
+                    files = [f.name for f in temp_dir.iterdir()]
                     myai_files = [f for f in files if 'myai_audio' in f]
                     print(f"🔍 MyAI audio files in temp dir: {myai_files}")
                 except Exception as e:
@@ -1021,24 +1029,24 @@ class SpeechToText:
                 return ""
             
             # Check file size
-            file_size = os.path.getsize(audio_file_path)
+            file_size = audio_path.stat().st_size
             if file_size == 0:
                 print("❌ Audio file is empty")
                 return ""
             
-            print(f"📁 Transcribing audio file: {audio_file_path} ({file_size} bytes)")
+            print(f"📁 Transcribing audio file: {audio_path} ({file_size} bytes)")
             
             # Add a small delay to ensure file is fully written
             time.sleep(0.2)
             
             # Check if file still exists just before transcription
-            if not os.path.exists(audio_file_path):
+            if not audio_path.exists():
                 print(f"❌ Audio file disappeared before transcription!")
                 return ""
             
             # Try to open the file to verify it's accessible
             try:
-                with open(audio_file_path, 'rb') as test_file:
+                with audio_path.open('rb') as test_file:
                     first_bytes = test_file.read(10)
                     print(f"✅ File is accessible, first 10 bytes: {first_bytes}")
             except Exception as access_error:
@@ -1049,7 +1057,7 @@ class SpeechToText:
             print("🔄 Starting Whisper transcription (English)...")
             
             # Load audio data directly (bypassing Whisper's FFmpeg dependency)
-            audio_data = self.load_audio_data(audio_file_path)
+            audio_data = self.load_audio_data(audio_path)
             
             # Transcribe using English only - handle both faster-whisper and standard whisper
             if self.using_faster_whisper:
@@ -1105,9 +1113,9 @@ class SpeechToText:
             cleanup_attempts = 3
             for attempt in range(cleanup_attempts):
                 try:
-                    if os.path.exists(audio_file_path):
+                    if audio_path.exists():
                         time.sleep(0.1)  # Small delay before cleanup
-                        os.unlink(audio_file_path)
+                        audio_path.unlink()
                         print(f"🗑️ Cleaned up temporary file (attempt {attempt + 1})")
                         break
                 except Exception as cleanup_error:
@@ -1611,25 +1619,23 @@ class SpeechToText:
 
     def _process_speech_chunk(self, speech_frames):
         """Process a chunk of speech to check for wake words."""
-        temp_filename = None
+        temp_filename: Optional[Path] = None
         try:
             # Note: speech_being_processed is already set to True when speech was first detected
             # Note: update_conversation_activity() was already called when speech was first detected
             
             # Create temporary audio file
-            import uuid
-            current_dir = os.getcwd()
-            temp_filename = os.path.join(current_dir, f"wake_audio_{uuid.uuid4().hex}.wav")
+            temp_filename = unique_tmp_audio_file("wake_audio")
             
             # Save audio frames to file
-            with wave.open(temp_filename, 'wb') as wf:
+            with wave.open(str(temp_filename), 'wb') as wf:
                 wf.setnchannels(self.channels)
                 wf.setsampwidth(pyaudio.PyAudio().get_sample_size(self.audio_format))
                 wf.setframerate(self.rate)
                 wf.writeframes(b''.join(speech_frames))
             
             # Transcribe the audio (English only)
-            audio_data = self.load_audio_data(temp_filename)
+            audio_data = self.load_audio_data(str(temp_filename))
             
             # Handle both faster-whisper and standard whisper
             if self.using_faster_whisper:
@@ -1743,9 +1749,9 @@ class SpeechToText:
             if temp_filename:
                 for attempt in range(3):  # Try up to 3 times
                     try:
-                        if os.path.exists(temp_filename):
+                        if temp_filename.exists():
                             time.sleep(0.1)  # Small delay
-                            os.unlink(temp_filename)
+                            temp_filename.unlink()
                             break
                     except Exception as cleanup_error:
                         if attempt == 2:  # Last attempt
@@ -1819,27 +1825,17 @@ class SpeechToText:
     def cleanup_audio_files(self):
         """Clean up any leftover audio files."""
         try:
-            import glob
-            current_dir = os.getcwd()
-            
-            # Clean up wake audio files
-            wake_files = glob.glob(os.path.join(current_dir, "wake_audio_*.wav"))
-            for file in wake_files:
-                try:
-                    os.unlink(file)
-                    print(f"🗑️ Cleaned up leftover file: {os.path.basename(file)}")
-                except:
-                    pass
-            
-            # Clean up myai audio files
-            myai_files = glob.glob(os.path.join(current_dir, "myai_audio_*.wav"))
-            for file in myai_files:
-                try:
-                    os.unlink(file)
-                    print(f"🗑️ Cleaned up leftover file: {os.path.basename(file)}")
-                except:
-                    pass
-                    
+            if TMP_AUDIO_DIR.exists():
+                for pattern in ("wake_audio_*.wav", "myai_audio_*.wav", "chunk_*.wav"):
+                    for file in TMP_AUDIO_DIR.glob(pattern):
+                        try:
+                            file.unlink()
+                            print(f"🗑️ Cleaned up leftover file: {file.name}")
+                        except Exception:
+                            pass
+                # If directory is empty, remove it
+                if not any(TMP_AUDIO_DIR.iterdir()):
+                    TMP_AUDIO_DIR.rmdir()
         except Exception as e:
             print(f"⚠️ Error during cleanup: {e}")
 
