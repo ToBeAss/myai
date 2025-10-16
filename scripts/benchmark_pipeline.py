@@ -11,9 +11,9 @@ Components measured:
 4. Overall latency and bottleneck identification
 
 Usage:
-    python benchmark_pipeline.py tests/audio/short_weather.wav
-    python benchmark_pipeline.py tests/audio/short_weather.wav --save
-    python benchmark_pipeline.py tests/audio/*.wav --save
+    python scripts/benchmark_pipeline.py tests/audio/short_weather.wav
+    python scripts/benchmark_pipeline.py tests/audio/short_weather.wav --save
+    python scripts/benchmark_pipeline.py tests/audio/*.wav --save
 """
 
 import time
@@ -31,7 +31,7 @@ import webrtcvad
 import tempfile
 import os
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_PATH = PROJECT_ROOT / "src"
 if SRC_PATH.exists():
     sys.path.insert(0, str(SRC_PATH))
@@ -42,6 +42,7 @@ from myai.tts.text_to_speech import TextToSpeech
 from myai.llm.llm_wrapper import LLM_Wrapper
 from myai.llm.agent import Agent
 from myai.llm.memory import Memory
+from myai.paths import data_file
 
 
 @contextmanager
@@ -711,8 +712,8 @@ class PipelineBenchmark:
         
         :param results: Benchmark results
         """
-        csv_file = 'benchmark_results.csv'
-        file_exists = Path(csv_file).exists()
+        csv_path = data_file('benchmark_results.csv')
+        file_exists = csv_path.exists()
         
         timings = results['timings']
         analysis = self.analyze_bottlenecks(results)
@@ -740,7 +741,7 @@ class PipelineBenchmark:
         }
         
         # Write to CSV
-        with open(csv_file, 'a', newline='') as f:
+        with open(csv_path, 'a', newline='') as f:
             writer = csv.DictWriter(f, fieldnames=row.keys())
             
             if not file_exists:
@@ -748,7 +749,7 @@ class PipelineBenchmark:
             
             writer.writerow(row)
         
-        print(f"\n💾 Results saved to: {csv_file}")
+        print(f"\n💾 Results saved to: {csv_path}")
     
     def run_full_benchmark(self) -> Dict[str, Any]:
         """
@@ -785,7 +786,7 @@ def main():
     parser.add_argument(
         '--save',
         action='store_true',
-        help='Save results to benchmark_results.csv'
+    help='Save results to data/benchmark_results.csv'
     )
     
     args = parser.parse_args()

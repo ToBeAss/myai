@@ -7,9 +7,9 @@ and optionally plays it back so you can verify the recording quality.
 You can then test the audio with test_volume_boost.py.
 
 Usage:
-    python record_test_audio.py                    # Interactive mode (recommended)
-    python record_test_audio.py 5                  # Record for 5 seconds
-    python record_test_audio.py 5 my_test.wav     # Custom filename
+    python scripts/record_test_audio.py                    # Interactive mode (recommended)
+    python scripts/record_test_audio.py 5                  # Record for 5 seconds
+    python scripts/record_test_audio.py 5 my_test.wav     # Custom filename
 
 Features:
     - Records audio at the same quality as your AI assistant (16kHz, mono)
@@ -26,6 +26,11 @@ import time
 import numpy as np
 from datetime import datetime
 import threading
+from pathlib import Path
+from typing import Optional
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+AUDIO_DIR = PROJECT_ROOT / "tests" / "audio"
 
 
 def play_audio(filename: str):
@@ -35,10 +40,14 @@ def play_audio(filename: str):
     :param filename: Path to WAV file to play
     """
     try:
-        print(f"\n🔊 Playing back: {filename}")
+        audio_path = Path(filename)
+        if not audio_path.is_absolute():
+            audio_path = AUDIO_DIR / audio_path
+
+        print(f"\n🔊 Playing back: {audio_path}")
         
         # Open the audio file
-        wf = wave.open(filename, 'rb')
+        wf = wave.open(str(audio_path), 'rb')
         
         # Initialize PyAudio
         audio = pyaudio.PyAudio()
@@ -71,7 +80,11 @@ def play_audio(filename: str):
         print(f"❌ Error playing audio: {e}")
 
 
-def record_audio(duration_seconds: int = 5, output_filename: str = None, play_back: bool = True) -> str:
+def record_audio(
+    duration_seconds: int = 5,
+    output_filename: Optional[str] = None,
+    play_back: bool = True,
+) -> Optional[str]:
     """
     Record audio from microphone and save to WAV file.
     
@@ -86,15 +99,24 @@ def record_audio(duration_seconds: int = 5, output_filename: str = None, play_ba
     CHANNELS = 1
     RATE = 16000
     
-    # Generate filename if not provided
+    AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+
     if output_filename is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_filename = f"test_audio_{timestamp}.wav"
+        output_path = AUDIO_DIR / f"test_audio_{timestamp}.wav"
+    else:
+        candidate = Path(output_filename)
+        output_path = candidate if candidate.is_absolute() else AUDIO_DIR / candidate
+
+    try:
+        display_path = output_path.relative_to(PROJECT_ROOT)
+    except ValueError:
+        display_path = output_path
     
     print("="*70)
     print("🎤 AUDIO RECORDER FOR VOLUME BOOST TESTING")
     print("="*70)
-    print(f"\n📁 Output file: {output_filename}")
+    print(f"\n📁 Output file: {display_path}")
     print(f"⏱️  Duration: {duration_seconds} seconds")
     print(f"🎚️  Sample rate: {RATE}Hz")
     print(f"📊 Channels: {CHANNELS} (mono)")
@@ -145,26 +167,26 @@ def record_audio(duration_seconds: int = 5, output_filename: str = None, play_ba
         stream.close()
         
         # Save audio to file
-        print(f"💾 Saving to {output_filename}...")
-        with wave.open(output_filename, 'wb') as wf:
+        print(f"💾 Saving to {display_path}...")
+        with wave.open(str(output_path), 'wb') as wf:
             wf.setnchannels(CHANNELS)
             wf.setsampwidth(audio.get_sample_size(FORMAT))
             wf.setframerate(RATE)
             wf.writeframes(b''.join(frames))
-        
+
         # Calculate audio statistics
         audio_data = np.frombuffer(b''.join(frames), dtype=np.int16)
         audio_float = audio_data.astype(np.float32) / 32768.0
-        
+
         peak = np.abs(audio_float).max()
         rms = np.sqrt(np.mean(audio_float ** 2))
-        
+
         print("\n" + "="*70)
         print("📊 AUDIO STATISTICS")
         print("="*70)
         print(f"Peak level: {peak:.4f}")
         print(f"RMS level:  {rms:.4f}")
-        
+
         if peak < 0.3:
             print("\n💡 Audio is VERY QUIET - Volume boost will likely help significantly!")
         elif peak < 0.6:
@@ -173,25 +195,25 @@ def record_audio(duration_seconds: int = 5, output_filename: str = None, play_ba
             print("\n✓  Audio is NORMAL - Volume boost will have minimal effect")
         else:
             print("\n⚠️  Audio is LOUD - Volume boost not needed")
-        
+
         print("="*70)
-        print(f"\n✅ Saved: {output_filename}")
-        print(f"\n🧪 Test with volume boost:")
-        print(f"   python test_volume_boost.py {output_filename}")
+        print(f"\n✅ Saved: {display_path}")
+        print("\n🧪 Test with volume boost:")
+        print(f"   python test_volume_boost.py {display_path}")
         print("="*70)
-        
+
         # Play back the recording if requested
         if play_back:
             play_back_choice = input("\n▶️  Play back the recording? (Y/n): ").strip().lower()
             if play_back_choice not in ['n', 'no']:
-                play_audio(output_filename)
-        
-        return output_filename
-        
+                play_audio(str(output_path))
+
+        return str(output_path)
+
     except Exception as e:
         print(f"\n❌ Error recording audio: {e}")
         return None
-        
+
     finally:
         audio.terminate()
 
@@ -246,18 +268,33 @@ def interactive_mode():
         print("="*70)
         print(f"\n✅ Created {len(recordings)} recording(s):")
         for i, rec in enumerate(recordings, 1):
-            print(f"   {i}. {rec}")
+            rec_path = Path(rec)
+            try:
+                display = rec_path.relative_to(PROJECT_ROOT)
+            except ValueError:
+                display = rec_path
+            print(f"   {i}. {display}")
         
         print("\n🧪 Test all recordings:")
         for rec in recordings:
-            print(f"   python test_volume_boost.py {rec}")
+            rec_path = Path(rec)
+            try:
+                display = rec_path.relative_to(PROJECT_ROOT)
+            except ValueError:
+                display = rec_path
+            print(f"   python test_volume_boost.py {display}")
         
         # Option to play back all recordings
         if len(recordings) > 1:
             play_all = input("\n▶️  Play back all recordings? (y/N): ").strip().lower()
             if play_all in ['y', 'yes']:
                 for i, rec in enumerate(recordings, 1):
-                    print(f"\n▶️  Playing recording {i}/{len(recordings)}: {rec}")
+                    rec_path = Path(rec)
+                    try:
+                        display = rec_path.relative_to(PROJECT_ROOT)
+                    except ValueError:
+                        display = rec_path
+                    print(f"\n▶️  Playing recording {i}/{len(recordings)}: {display}")
                     play_audio(rec)
                     if i < len(recordings):
                         time.sleep(1)  # Brief pause between recordings

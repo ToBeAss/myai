@@ -9,8 +9,10 @@ the 300ms chunking threshold in production.
 import sounddevice as sd
 import numpy as np
 import wave
-import os
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+AUDIO_DIR = PROJECT_ROOT / "tests" / "audio"
 
 def record_benchmark_audio(name: str, duration: int, description: str):
     """
@@ -37,18 +39,23 @@ def record_benchmark_audio(name: str, duration: int, description: str):
     print("✅ Recording complete!")
     
     # Save to tests/audio/
-    os.makedirs('tests/audio', exist_ok=True)
-    filepath = f'tests/audio/{name}.wav'
+    AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+    filepath = AUDIO_DIR / f"{name}.wav"
     
-    with wave.open(filepath, 'wb') as wf:
+    with wave.open(str(filepath), 'wb') as wf:
         wf.setnchannels(1)
         wf.setsampwidth(2)
         wf.setframerate(16000)
         audio_int16 = (audio * 32767).astype(np.int16)
         wf.writeframes(audio_int16.tobytes())
     
-    print(f"💾 Saved to: {filepath}\n")
-    return filepath
+    try:
+        display_path = filepath.relative_to(PROJECT_ROOT)
+    except ValueError:
+        display_path = filepath
+
+    print(f"💾 Saved to: {display_path}\n")
+    return str(filepath)
 
 # Test suite covering different scenarios
 TEST_SUITE = [
@@ -87,11 +94,16 @@ def main():
     print("="*70)
     print("\nRecorded files:")
     for name, filepath in recorded:
-        print(f"  • {name}: {filepath}")
+        path_obj = Path(filepath)
+        try:
+            display_path = path_obj.relative_to(PROJECT_ROOT)
+        except ValueError:
+            display_path = path_obj
+        print(f"  • {name}: {display_path}")
     
     print("\n🚀 Next steps:")
-    print("  1. Run: python benchmark_pipeline.py tests/audio/short_weather.wav")
-    print("  2. Or test all: python benchmark_pipeline.py tests/audio/*.wav")
+    print("  1. Run: python scripts/benchmark_pipeline.py tests/audio/short_weather.wav")
+    print("  2. Or test all: python scripts/benchmark_pipeline.py tests/audio/*.wav")
 
 if __name__ == "__main__":
     main()

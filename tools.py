@@ -4,6 +4,7 @@ from datetime import datetime
 from myai.llm.tool import ToolBlueprint
 from urllib.parse import quote_plus
 import os
+from myai.paths import data_file
 
 
 # Get the absolute path to the file
@@ -12,7 +13,7 @@ import os
 
 
 def read_from_memory():
-    with open('memory.json', 'r') as f:
+    with open(data_file('memory.json'), 'r') as f:
         data = json.load(f)
     return data
 
@@ -27,7 +28,7 @@ def write_to_memory(content: str, memory_type: str = "general"):
     """
     # Read existing memories
     try:
-        with open('memory.json', 'r') as f:
+        with open(data_file('memory.json'), 'r') as f:
             data = json.load(f)
     except FileNotFoundError:
         data = {"memories": []}
@@ -48,7 +49,7 @@ def write_to_memory(content: str, memory_type: str = "general"):
     data["memories"].append(new_memory)
     
     # Write back to file
-    with open('memory.json', 'w') as f:
+    with open(data_file('memory.json'), 'w') as f:
         json.dump(data, f, indent=4)
     
     return f"Memory saved with ID {next_id}: {content}"

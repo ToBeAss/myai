@@ -5,28 +5,38 @@ Analyzes benchmark_results.csv to show performance trends and comparisons.
 Useful for tracking improvements over time and comparing different test scenarios.
 
 Usage:
-    python compare_benchmarks.py                    # Show all results
-    python compare_benchmarks.py --test short_weather  # Filter by test
-    python compare_benchmarks.py --latest 5         # Show last 5 runs
+    python scripts/compare_benchmarks.py                    # Show all results
+    python scripts/compare_benchmarks.py --test short_weather  # Filter by test
+    python scripts/compare_benchmarks.py --latest 5         # Show last 5 runs
 """
 
 import csv
 import argparse
+import sys
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Optional, Union
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRC_PATH = PROJECT_ROOT / "src"
+if SRC_PATH.exists():
+    sys.path.insert(0, str(SRC_PATH))
+
+from myai.paths import data_file
 from collections import defaultdict
 
 
-def load_results(csv_file: str = 'benchmark_results.csv') -> List[Dict]:
+def load_results(csv_file: Optional[Union[str, Path]] = None) -> List[Dict]:
     """Load benchmark results from CSV."""
-    if not Path(csv_file).exists():
-        print(f"❌ No results file found: {csv_file}")
-        print("Run benchmarks first: python benchmark_pipeline.py tests/audio/short_weather.wav --save")
+    csv_path = Path(csv_file) if csv_file else data_file('benchmark_results.csv')
+
+    if not csv_path.exists():
+        print(f"❌ No results file found: {csv_path}")
+        print("Run benchmarks first: python scripts/benchmark_pipeline.py tests/audio/short_weather.wav --save")
         return []
     
     results = []
-    with open(csv_file, 'r') as f:
+    with open(csv_path, 'r') as f:
         reader = csv.DictReader(f)
         for row in reader:
             # Convert numeric fields

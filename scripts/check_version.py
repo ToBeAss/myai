@@ -8,9 +8,12 @@ import yaml
 import os
 from pathlib import Path
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROMPTS_DIR = PROJECT_ROOT / "prompts"
+
 def load_config():
     """Load the Sam configuration file."""
-    config_path = Path(__file__).parent / "prompts" / "sam_config.yaml"
+    config_path = PROMPTS_DIR / "sam_config.yaml"
     
     if not config_path.exists():
         print("❌ Configuration file not found!")
@@ -65,7 +68,7 @@ def check_version():
     print(f"\n🔢 Estimated Tokens: ~{token_estimate}")
     
     # Archived versions
-    versions_dir = Path(__file__).parent / "prompts" / "versions"
+    versions_dir = PROMPTS_DIR / "versions"
     if versions_dir.exists():
         archived = list(versions_dir.glob("sam_config_v*.yaml"))
         print(f"\n📁 Archived Versions: {len(archived)}")
@@ -79,7 +82,7 @@ def check_version():
     print("\n💡 Quick Commands:")
     print("   - View changelog: cat prompts/CHANGELOG.md")
     print("   - Compare versions: diff prompts/versions/sam_config_v1.0.0.yaml prompts/sam_config.yaml")
-    print("   - Run tests: python test_personality_scenarios.py")
+    print("   - Run tests: python -m pytest tests/test_personality_scenarios.py")
     print()
 
 if __name__ == "__main__":

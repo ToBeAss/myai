@@ -8,6 +8,7 @@ import keyboard
 import os
 import numpy as np
 from typing import Optional, Callable
+from pathlib import Path
 import struct
 import ssl
 import urllib.request
@@ -17,6 +18,7 @@ import warnings
 import webrtcvad
 from concurrent.futures import ThreadPoolExecutor, Future
 import uuid
+from myai.paths import data_file
 
 # Try to import faster-whisper for optimized performance
 try:
@@ -32,13 +34,13 @@ warnings.filterwarnings("ignore", message="FP16 is not supported on CPU; using F
 class WakeWordMetrics:
     """Track wake word activation metrics for analytics and optimization."""
     
-    def __init__(self, metrics_file: str = "wake_word_metrics.json"):
+    def __init__(self, metrics_file: Optional[Path] = None):
         """
         Initialize metrics tracking.
         
         :param metrics_file: Path to file for storing metrics
         """
-        self.metrics_file = metrics_file
+        self.metrics_file = Path(metrics_file) if metrics_file else data_file("wake_word_metrics.json")
         self.session_start = time.time()
         
         # Session metrics

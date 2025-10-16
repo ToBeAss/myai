@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
 Utility script to list available Google Cloud TTS voices with pricing information.
-Usage: python list_voices.py [language_code]
+Usage: python scripts/list_voices.py [language_code]
 Examples:
-    python list_voices.py           # List all voices
-    python list_voices.py en-GB     # List only British English voices
-    python list_voices.py en-US     # List only US English voices
+    python scripts/list_voices.py           # List all voices
+    python scripts/list_voices.py en-GB     # List only British English voices
+    python scripts/list_voices.py en-US     # List only US English voices
 """
 
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_PATH = PROJECT_ROOT / "src"
 if SRC_PATH.exists():
     sys.path.insert(0, str(SRC_PATH))

@@ -1,14 +1,14 @@
 {
   "month": "2025-10",
   "tiers": {
-    "standard": 6027,
+    "standard": 6504,
     "wavenet": 52,
     "neural2": 57,
     "studio": 0,
     "journey": 57,
-    "chirp": 134975,
+    "chirp": 137145,
     "polyglot": 0
   },
-  "total_requests": 2364,
-  "last_updated": "2025-10-16T01:21:56.364191"
+  "total_requests": 2414,
+  "last_updated": "2025-10-16T02:20:39.528867"
 }

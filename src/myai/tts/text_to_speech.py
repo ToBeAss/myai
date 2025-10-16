@@ -3,7 +3,7 @@ from google.cloud import texttospeech
 from dotenv import load_dotenv
 import tempfile
 import pygame
-from typing import Optional
+from typing import Optional, Union
 import time
 import json
 from datetime import datetime
@@ -11,6 +11,7 @@ from pathlib import Path
 import threading
 import queue
 import re
+from myai.paths import data_file
 
 class TextToSpeech:
     """Text-to-speech handler using Google Cloud TTS with usage tracking."""
@@ -53,7 +54,7 @@ class TextToSpeech:
     
     def __init__(self, voice_name: str = "en-US-Standard-A", language_code: str = "en-US", 
                  speaking_rate: float = 1.0, pitch: float = 0.0, 
-                 enforce_free_tier: bool = True, usage_file: str = "tts_usage.json",
+                 enforce_free_tier: bool = True, usage_file: Optional[Union[str, Path]] = None,
                  fallback_voice: Optional[str] = None):
         """
         Initialize the Text-to-Speech system.
@@ -97,7 +98,7 @@ class TextToSpeech:
             self.speaking_rate = speaking_rate
             self.pitch = pitch
             self.enforce_free_tier = enforce_free_tier
-            self.usage_file = usage_file
+            self.usage_file = Path(usage_file) if usage_file else data_file("tts_usage.json")
             self.using_fallback = False  # Track if we're currently using fallback
             
             # Determine voice tiers

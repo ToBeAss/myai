@@ -17,17 +17,17 @@ This document replaces the scattered feature guides, summaries, and quick refere
    python main_continuous.py
    ```
 4. Optional tooling:
-   - `record_test_audio.py` / `record_benchmark_audio.py` to capture audio samples.
-   - `benchmark_pipeline.py` and `compare_benchmarks.py` for performance tracking.
+   - `scripts/record_test_audio.py` / `scripts/record_benchmark_audio.py` to capture audio samples.
+   - `scripts/benchmark_pipeline.py` and `scripts/compare_benchmarks.py` for performance tracking.
 
 ## Architecture at a Glance
 
 - **Entry points**: `main.py` (interactive flows) and `main_continuous.py` (always‑listening agent).
 - **Speech pipeline**: `speech_to_text.py` orchestrates VAD, chunking, diarization hooks, and ASR provider selection.
 - **Wake word & VAD**: `main_continuous.py`, `test_vad.py`, and wakeword utilities gate audio handed to transcription.
-- **Context & personality**: prompts under `prompts/` define personas, memory behaviors live in `memory.json`, and conversation helpers sit in `tools.py`.
-- **Text-to-speech**: modules in `lib/` handle voice synthesis, fallback voices, and stream buffering.
-- **Benchmark harness**: `benchmark_pipeline.py` plus `benchmark_results.csv` capture latency/accuracy across configurations.
+- **Context & personality**: prompts under `prompts/` define personas, memory behaviors live in `data/memory.json`, and conversation helpers sit in `tools.py`.
+- **Text-to-speech**: modules in `src/myai/tts/` handle voice synthesis, fallback voices, and stream buffering.
+- **Benchmark harness**: `scripts/benchmark_pipeline.py` plus `data/benchmark_results.csv` capture latency/accuracy across configurations.
 
 ## Core Features
 
