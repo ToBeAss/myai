@@ -2,6 +2,7 @@ import sys
 import os
 import warnings
 from pathlib import Path
+from typing import Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 SRC_PATH = PROJECT_ROOT / "src"
@@ -18,10 +19,10 @@ from myai.llm.memory import Memory
 from myai.llm.agent import Agent
 from myai.tts.text_to_speech import TextToSpeech
 from myai.llm.prompt_loader import load_prompts
-from tools import (
-    read_from_memory_tool_blueprint, 
+from myai.tools import (
+    read_from_memory_tool_blueprint,
     write_to_memory_tool_blueprint,
-    google_search_tool_blueprint
+    google_search_tool_blueprint,
 )
 
 # Load agent configuration from prompts file
@@ -57,7 +58,7 @@ while True:
     print("❌ Invalid choice. Please enter 1 or 2.")
 
 voice_mode = (mode_choice == '2')
-tts = None
+tts: Optional[TextToSpeech] = None
 
 # Initialize text-to-speech if voice mode is selected
 if voice_mode:
@@ -90,6 +91,7 @@ while True:
         # Voice mode: collect response and speak it
         response_generator = myai.stream(user_input=user_input)
         print("🤖: ", end="", flush=True)
+        assert tts is not None
         tts.speak_streaming_async(response_generator, chunk_on=",.!?—", print_text=True, min_chunk_size=30)
         print()
     else:

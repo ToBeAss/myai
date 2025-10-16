@@ -10,10 +10,10 @@ from myai.llm.llm_wrapper import LLM_Wrapper
 from myai.llm.memory import Memory
 from myai.llm.agent import Agent
 from myai.llm.prompt_loader import load_prompts
-from tools import (
-    read_from_memory_tool_blueprint, 
+from myai.tools import (
+    read_from_memory_tool_blueprint,
     write_to_memory_tool_blueprint,
-    google_search_tool_blueprint
+    google_search_tool_blueprint,
 )
 
 

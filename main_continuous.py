@@ -20,10 +20,10 @@ from myai.llm.agent import Agent
 from myai.stt.speech_to_text import SpeechToText
 from myai.tts.text_to_speech import TextToSpeech
 from myai.llm.prompt_loader import load_prompts
-from tools import (
-    read_from_memory_tool_blueprint, 
+from myai.tools import (
+    read_from_memory_tool_blueprint,
     write_to_memory_tool_blueprint,
-    google_search_tool_blueprint
+    google_search_tool_blueprint,
 )
 
 # Load agent configuration from prompts file

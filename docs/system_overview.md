@@ -25,7 +25,7 @@ This document replaces the scattered feature guides, summaries, and quick refere
 - **Entry points**: `main.py` (interactive flows) and `main_continuous.py` (always‑listening agent).
 - **Speech pipeline**: `speech_to_text.py` orchestrates VAD, chunking, diarization hooks, and ASR provider selection.
 - **Wake word & VAD**: `main_continuous.py`, `test_vad.py`, and wakeword utilities gate audio handed to transcription.
-- **Context & personality**: prompts under `prompts/` define personas, memory behaviors live in `data/memory.json`, and conversation helpers sit in `tools.py`.
+- **Context & personality**: prompts under `prompts/` define personas, memory behaviors live in `data/memory.json`, and conversation helpers sit in the `src/myai/tools/` package.
 - **Text-to-speech**: modules in `src/myai/tts/` handle voice synthesis, fallback voices, and stream buffering.
 - **Benchmark harness**: `scripts/benchmark_pipeline.py` plus `data/benchmark_results.csv` capture latency/accuracy across configurations.
 
