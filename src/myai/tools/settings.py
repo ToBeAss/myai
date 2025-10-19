@@ -4,7 +4,29 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Optional, Sequence
+
+
+@dataclass(frozen=True)
+class CalendarConfig:
+    """Configuration for calendar integrations."""
+
+    credentials_path: Optional[Path] = None
+    default_timezone: str = "UTC"
+    max_results: int = 10
+    scopes: Sequence[str] = (
+        "https://www.googleapis.com/auth/calendar.events.readonly",
+    )
+
+
+@dataclass(frozen=True)
+class EmailConfig:
+    """Configuration for email integrations."""
+
+    provider: str = "gmail"
+    credentials_path: Optional[Path] = None
+    mailbox: str = "INBOX"
+    label_filters: Sequence[str] = ()
 
 
 @dataclass(frozen=True)
@@ -18,3 +40,5 @@ class ToolSettings:
         "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     )
     extra_http_headers: Mapping[str, str] = field(default_factory=dict)
+    calendar: Optional[CalendarConfig] = None
+    email: Optional[EmailConfig] = None

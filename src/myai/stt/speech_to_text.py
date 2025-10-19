@@ -227,7 +227,7 @@ class SpeechToText:
                  track_metrics: bool = True,
                  false_positive_timeout: float = 10.0,
                  enable_vad: bool = True,
-                 vad_aggressiveness: int = 2,
+                 vad_aggressiveness: int = 1,
                  use_faster_whisper: bool = True,
                  vocabulary_hints: str = "Tobias, Sam, hey Sam, weather, temperature, time, reminder, search"):
         """
@@ -271,7 +271,7 @@ class SpeechToText:
             self.audio_format = pyaudio.paInt16
             self.channels = 1
             self.rate = 16000
-            self.chunk = 1024
+            self.chunk = 320  # 20ms frames (320 samples at 16kHz) - matches WebRTC VAD expectations
             
             # Language settings - English only for optimal accuracy
             self.preferred_language = "en"  # Force English for consistency
@@ -316,8 +316,8 @@ class SpeechToText:
             # Initialize WebRTC Voice Activity Detection
             self.enable_vad = enable_vad
             self.vad = None
-            self.vad_frame_duration = 30  # ms (10, 20, or 30 supported by WebRTC VAD)
-            self.vad_frame_size = int(self.rate * self.vad_frame_duration / 1000)
+            self.vad_frame_duration = 20  # ms (10, 20, or 30 supported by WebRTC VAD) - matches chunk size
+            self.vad_frame_size = int(self.rate * self.vad_frame_duration / 1000)  # 320 samples at 16kHz
             
             if enable_vad:
                 try:
@@ -409,7 +409,9 @@ class SpeechToText:
         
         Whisper adds punctuation thinking each chunk is complete, which can create
         awkward combinations like "What's the weather? in London."
-        This function cleans up such artifacts.
+        
+        Also detects and removes duplicate words at chunk boundaries
+        (e.g., "model too." + "to perform" → "model too to perform" should become "model to perform")
         
         :param transcripts: List of individual chunk transcripts
         :return: Cleaned combined transcript
@@ -426,6 +428,45 @@ class SpeechToText:
             chunk = chunk.strip()
             if not chunk:
                 continue
+            
+            # Check for word overlap with previous chunk
+            if cleaned_chunks and i > 0:
+                # Get last 1-3 words from previous chunk (without punctuation)
+                prev_chunk = cleaned_chunks[-1]
+                prev_words = prev_chunk.rstrip('.!?,;:').split()
+                
+                # Get first 1-3 words from current chunk
+                curr_words = chunk.split()
+                
+                # Check for overlap (comparing up to 3 words)
+                max_overlap = min(3, len(prev_words), len(curr_words))
+                overlap_found = 0
+                
+                for overlap_size in range(max_overlap, 0, -1):
+                    prev_tail = ' '.join(prev_words[-overlap_size:]).lower()
+                    curr_head = ' '.join(curr_words[:overlap_size]).lower()
+                    
+                    # Also handle phonetic duplicates like "too"/"to", "their"/"there"
+                    phonetic_matches = {
+                        'too': 'to',
+                        'to': 'too',
+                        'two': 'to',
+                        'their': 'there',
+                        'there': 'their',
+                        'your': "you're",
+                        "you're": 'your',
+                    }
+                    
+                    # Direct match or phonetic match
+                    if prev_tail == curr_head or prev_tail in phonetic_matches and phonetic_matches[prev_tail] == curr_head:
+                        overlap_found = overlap_size
+                        break
+                
+                # If overlap found, remove from current chunk
+                if overlap_found > 0:
+                    chunk = ' '.join(curr_words[overlap_found:])
+                    if not chunk:  # If entire chunk was overlap, skip it
+                        continue
             
             # Detect if this looks like a continuation (not a new sentence)
             is_continuation = False
@@ -1062,7 +1103,14 @@ class SpeechToText:
             # Transcribe using English only - handle both faster-whisper and standard whisper
             if self.using_faster_whisper:
                 # faster-whisper returns segments and info
-                segments, info = self.model.transcribe(audio_data, language="en", initial_prompt=self.vocabulary_hints)
+                # Enable Silero VAD filter to remove silence/noise at edges
+                segments, info = self.model.transcribe(
+                    audio_data, 
+                    language="en", 
+                    initial_prompt=self.vocabulary_hints,
+                    vad_filter=True,  # Enable Silero VAD for cleaner transcription
+                    vad_parameters=dict(min_silence_duration_ms=500)  # 500ms silence = split point
+                )
                 transcribed_text = " ".join([segment.text for segment in segments]).strip()
             else:
                 # Standard whisper returns dict with text
@@ -1274,20 +1322,32 @@ class SpeechToText:
             
             # Buffer to store recent audio
             audio_buffer = []
-            buffer_duration = 5.0  # Increased from 3 to 5 seconds
+            buffer_duration = 5.0  # Keep 5 seconds of rolling audio
             buffer_size = int(self.rate * buffer_duration / self.chunk)
             
-            silence_threshold = 300  # Lower threshold OK since VAD does the smart filtering
+            # Timing thresholds (in milliseconds for clarity)
+            SILENCE_THRESHOLD_VOLUME = 300  # Volume level (lower OK since VAD does smart filtering)
+            PRE_ROLL_MS = 200  # Capture 200ms before speech starts (context)
+            POST_ROLL_MS = 300  # Require 300ms of silence to end recording
+            MIN_COOLDOWN_MS = 500  # Minimum time between processing speech segments
+            MAX_SPEECH_DURATION_S = 60.0  # Failsafe: stop after 60 seconds
+            
+            # Convert milliseconds to frame counts (each chunk = 20ms)
+            CHUNK_DURATION_MS = 20  # 320 samples at 16kHz = 20ms
+            pre_roll_frames = int(PRE_ROLL_MS / CHUNK_DURATION_MS)  # 10 frames = 200ms
+            post_roll_frames = int(POST_ROLL_MS / CHUNK_DURATION_MS)  # 15 frames = 300ms
+            min_cooldown_frames = int(MIN_COOLDOWN_MS / CHUNK_DURATION_MS)  # 25 frames = 500ms
+            
             speech_detected = False
             speech_frames = []
             silence_count = 0
             speech_start_time = 0  # Track when speech recording started
             last_speech_time = 0  # Track when we last processed speech
-            max_speech_duration = 60.0  # Maximum recording duration in seconds (failsafe for noisy environments)
+            frames_since_last_speech = 0  # Track cooldown period
             
             # VAD consecutive frame tracking
             vad_speech_frames = 0
-            vad_required_frames = 3  # Require 3 consecutive speech frames to confirm speech
+            vad_required_frames = 3  # Require 3 consecutive speech frames to confirm speech (60ms)
             
             while self.is_listening:
                 try:
@@ -1303,11 +1363,14 @@ class SpeechToText:
                     if len(audio_buffer) > buffer_size:
                         audio_buffer.pop(0)
                     
+                    # Track time since last speech processing (cooldown)
+                    frames_since_last_speech += 1
+                    
                     # Detect speech activity with two-stage filtering
                     current_time = time.time()
                     
                     # STAGE 1: Volume check (fast pre-filter)
-                    if volume > silence_threshold:
+                    if volume > SILENCE_THRESHOLD_VOLUME:
                         # STAGE 2: VAD check (accurate speech detection)
                         is_speech = self._is_speech_vad(data)
                         
@@ -1324,18 +1387,18 @@ class SpeechToText:
                         # Only proceed if we have enough consecutive VAD-confirmed speech frames
                         if vad_speech_frames >= vad_required_frames:
                             if not speech_detected:
-                                # Only start new speech detection if enough time has passed since last speech
-                                if current_time - last_speech_time > 2.0:  # 2 second gap required
+                                # Only start new speech detection if enough time has passed since last speech (cooldown)
+                                if frames_since_last_speech >= min_cooldown_frames:
                                     speech_detected = True
                                     speech_start_time = current_time  # Track when recording started
+                                    frames_since_last_speech = 0  # Reset cooldown counter
                                     
-                                    # Start fresh - only include recent audio buffer (not old data from previous interaction)
-                                    # Only keep the last few frames (pre-roll), not the entire buffer
-                                    pre_roll_frames = min(10, len(audio_buffer))  # Keep last ~250ms of audio
-                                    speech_frames = list(audio_buffer)[-pre_roll_frames:] if audio_buffer else []
+                                    # Add pre-roll: Include recent audio buffer for context
+                                    # pre_roll_frames is already calculated (10 frames = 200ms)
+                                    speech_frames = list(audio_buffer)[-pre_roll_frames:] if len(audio_buffer) >= pre_roll_frames else list(audio_buffer)
                                     
                                     if self.enable_vad:
-                                        print("🎤 Speech detected (VAD confirmed), recording...")
+                                        print(f"🎤 Speech detected (VAD confirmed) with {PRE_ROLL_MS}ms pre-roll, recording...")
                                     else:
                                         print("🎤 Speech detected, recording...")
                                     
@@ -1350,9 +1413,9 @@ class SpeechToText:
                                 speech_frames.append(data)
                                 silence_count = 0
                                 
-                                # Check if recording has gone on too long
-                                if current_time - speech_start_time > max_speech_duration:
-                                    print("⏱️ Maximum recording duration reached, processing speech...")
+                                # Failsafe: Check if recording has gone on too long
+                                if current_time - speech_start_time > MAX_SPEECH_DURATION_S:
+                                    print(f"⏱️ Maximum recording duration ({MAX_SPEECH_DURATION_S}s) reached, processing speech...")
                                     self._process_speech_chunk(speech_frames)
                                     speech_detected = False
                                     speech_frames = []
@@ -1369,11 +1432,11 @@ class SpeechToText:
                             
                             # Use chunked transcription if enabled, otherwise use traditional approach
                             if self.enable_chunked_transcription:
-                                # Chunked mode: Trigger on short pause (300ms = 12 frames)
-                                short_pause_threshold = 12
+                                # Chunked mode: Trigger on short pause (500ms = 25 frames at 20ms per frame)
+                                short_pause_threshold = int(500 / CHUNK_DURATION_MS)  # 25 frames
                                 
                                 if silence_count > short_pause_threshold:
-                                    print(f"⚡ Short pause detected ({short_pause_threshold * 25}ms), starting chunked processing...")
+                                    print(f"⚡ Short pause detected (500ms), starting chunked processing...")
                                     # Pass the stream so we can continue listening
                                     self._process_speech_with_chunking(speech_frames, stream)
                                     speech_detected = False
@@ -1384,18 +1447,10 @@ class SpeechToText:
                                     # Clear audio buffer to prevent contamination from this interaction
                                     audio_buffer.clear()
                             else:
-                                # Traditional mode: Dynamic silence threshold
-                                # Short commands get faster cutoff, longer speech gets more patience
-                                if len(speech_frames) < 80:  # Less than 2 seconds of speech
-                                    dynamic_threshold = 30  # 750ms silence (fast for quick commands)
-                                elif len(speech_frames) < 200:  # 2-5 seconds of speech
-                                    dynamic_threshold = 40  # 1000ms silence (balanced)
-                                else:  # Long speech (5+ seconds)
-                                    dynamic_threshold = 50  # 1250ms silence (patient)
-                                
-                                # If we've had enough silence, process the speech
-                                if silence_count > dynamic_threshold:
-                                    print(f"🔄 Processing speech (after {dynamic_threshold * 25}ms silence)...")
+                                # Traditional mode: Use POST_ROLL_MS threshold (300ms = 15 frames)
+                                # This provides consistent end-of-speech detection
+                                if silence_count > post_roll_frames:
+                                    print(f"🔄 Processing speech (after {POST_ROLL_MS}ms silence)...")
                                     self._process_speech_chunk(speech_frames)
                                     speech_detected = False
                                     speech_frames = []
@@ -1431,18 +1486,19 @@ class SpeechToText:
         This method transcribes chunks in parallel as the user continues speaking.
         
         Strategy:
-        - On SHORT_PAUSE (300ms): Stop current chunk, start transcription, begin new recording
-        - Continue recording new chunk for up to REMAINING_PAUSE (700ms more = 1000ms total)
+        - On SHORT_PAUSE (500ms): Stop current chunk, start transcription, begin new recording
+        - Continue recording new chunk for up to REMAINING_PAUSE (1000ms more = 1500ms total)
         - If new speech detected: Keep chunk, repeat process
         - If no speech: Discard empty chunk, finalize
         
         :param initial_frames: Initial audio frames for first chunk
         :param stream: Active audio stream to continue listening
         """
-        # Configurable thresholds
-        SHORT_PAUSE_MS = 300   # After this, transcribe chunk and start new recording
-        LONG_PAUSE_MS = 1000   # Total silence before considering user done
-        REMAINING_PAUSE_MS = LONG_PAUSE_MS - SHORT_PAUSE_MS  # 700ms more to wait
+        # Configurable thresholds - adjusted for natural speech patterns
+        SHORT_PAUSE_MS = 500   # After this, transcribe chunk and start new recording (breathing/thinking pause)
+        LONG_PAUSE_MS = 1500   # Total silence before considering user done (end-of-turn pause)
+        REMAINING_PAUSE_MS = LONG_PAUSE_MS - SHORT_PAUSE_MS  # 1000ms more to wait
+        CHUNK_DURATION_MS = 20  # Each chunk = 20ms (320 samples at 16kHz)
         
         chunks = []  # Store (audio_frames, transcript_future) tuples
         chunk_num = 1
@@ -1453,9 +1509,9 @@ class SpeechToText:
         first_future = self._transcribe_audio_chunk_async(initial_frames)
         chunks.append((initial_frames.copy(), first_future))
         
-        # Convert to frame counts (each frame = 25ms)
-        short_pause_frames = SHORT_PAUSE_MS // 25
-        remaining_pause_frames = REMAINING_PAUSE_MS // 25
+        # Convert to frame counts (each frame = 20ms now)
+        short_pause_frames = SHORT_PAUSE_MS // CHUNK_DURATION_MS  # 25 frames = 500ms
+        remaining_pause_frames = REMAINING_PAUSE_MS // CHUNK_DURATION_MS  # 50 frames = 1000ms
         
         while chunk_num < max_chunks:
             # Start recording next potential chunk
