@@ -149,6 +149,42 @@
             "timestamp": "07.10.2025 13:19",
             "type": "idea",
             "content": "Tobias's idea about a dynamic system prompt: maintaining a core minimal instruction set for an AI model, with the ability to retrieve relevant instructions on demand via a retrieval system (like vector similarity or keyword matching) to handle new contexts or uncertainties. The approach includes merging retrieved instructions with the base prompt, balancing clarity and retrieval speed, and managing instruction overlap with pruning or ranking."
+        },
+        {
+            "id": 26,
+            "timestamp": "04.11.2025 20:24",
+            "type": "general",
+            "content": "Ideas for AI assistant memory system: structured conversation storage in PostgreSQL with pgvector for vector search; layers for user intent tags, priority flags, action states; temporal awareness for categorizing by day/session and tracking topic relevance; multimodal input integration (files, images, voice notes); adaptive retrieval based on user habits. Tailored for assistant use, not just chat. These ideas enhance prioritization, contextual recall, and proactive assistance."
+        },
+        {
+            "id": 27,
+            "timestamp": "04.11.2025 20:25",
+            "type": "project",
+            "content": "Mem0 Agent noted as a potentially interesting AI assistant memory system to explore further later. Tagged under 'project' for follow-up and research."
+        },
+        {
+            "id": 28,
+            "timestamp": "04.11.2025 20:40",
+            "type": "project",
+            "content": "Discussed implementing a mixed memory chat system with Tobias: keep recent chat in prompt as fresh working memory; prepend relevant semantic summaries from vector store as long-term context; use structured metadata (tags, timestamps, action points) linked with semantic chunks for enhanced retrieval. Periodically summarize and push recent chat to vector store upon topic change or memory window limits. Emphasized running semantic search on every prompt to find relevant past context, and using separate tools for structured data search or deeper semantic queries on demand to keep responses efficient and relevant."
+        },
+        {
+            "id": 29,
+            "timestamp": "05.11.2025 17:04",
+            "type": "project",
+            "content": "Saved idea for Tobias: Create a gentle prompt system to nudge him into productive use of small pockets of time throughout his day for homework and work tasks. This supports a proactive rather than reactive approach to managing workload and breaks, aligning with his preference to avoid rigid scheduling and last-minute rushes."
+        },
+        {
+            "id": 30,
+            "timestamp": "05.11.2025 17:06",
+            "type": "preference",
+            "content": "Sam's favorite tea is Earl Grey, noted for its sharp bergamot bite. This preference is now saved for future conversations."
+        },
+        {
+            "id": 31,
+            "timestamp": "07.11.2025 16:21",
+            "type": "project",
+            "content": "Discussed implementing a proactive voice assistant feature for Tobias's MCP system. Instead of passively waiting for prompts, the assistant should initiate conversations based on triggers like calendar events, sensor inputs, or priority emails. It would use Whisper for transcription, OpenAI API for logic, and Chirp or Texas speech models for audio output. To prevent interruption, the system will detect when Tobias is speaking and queue notifications to deliver at natural pauses or conversation ends, possibly asking permission to interrupt mid-conversation. The aim is a polite, context-aware digital butler that nudges appropriately without being intrusive."
         }
     ]
 }
