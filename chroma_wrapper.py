@@ -2,17 +2,17 @@ import os
 from dotenv import load_dotenv
 from typing import Any, List
 from langchain_chroma import Chroma
-from langchain_openai import AzureOpenAIEmbeddings
+from langchain_openai import AzureOpenAIEmbeddings, OpenAIEmbeddings
 from openai import APIConnectionError
 from langchain_community.document_loaders import PyPDFDirectoryLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain.schema import Document
+from langchain_core.documents import Document
 
 class Chroma_Wrapper:
     """
     A wrapper for the Chroma VectorDB model.
     """
-    def __init__(self, agent_name: str = "vectordb", embedding_model_name: str = "azure-text-embedding-3-large", **kwargs):
+    def __init__(self, parent_dir: str = "",agent_name: str = "vectordb", embedding_model_name: str = "azure-text-embedding-3-large", **kwargs):
         """
         Initializes the Chroma Wrapper."
 
@@ -26,6 +26,7 @@ class Chroma_Wrapper:
         
         load_dotenv() # Load environment variables from .env file
 
+        self._parent_dir = parent_dir
         self._agent_name = agent_name
         self._embedding_model = self._init_embedding_model(embedding_model_name, **kwargs)
         self._vector_db: Chroma = self._init_vector_db()
@@ -56,6 +57,12 @@ class Chroma_Wrapper:
                 azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT"),
                 **kwargs # Pass additional parameters
             )
+        elif model_name == "openai-text-embedding-3-large":
+            return OpenAIEmbeddings(
+                model = "text-embedding-3-large",
+                openai_api_key = os.getenv("OPENAI_API_KEY"),
+                **kwargs # Pass additional parameters
+            )
         else: 
             raise ValueError(f"Unsupported embedding model: {model_name}")
         
@@ -67,19 +74,19 @@ class Chroma_Wrapper:
         :return: The initialized VectorDB model.
         """
         return Chroma(
-            persist_directory = f"chroma/{self._agent_name}",
+            persist_directory = f"{self._parent_dir}/chroma/{self._agent_name}",
             embedding_function=self._embedding_model,
         )
     
 
-    def _load_documents(self, path: str) -> List:
+    def _load_documents(self, dir_path: str) -> List:
         """
-        Load documents from the given path.
+        Load documents from the given directory path.
 
-        :param path: The path to the documents.
+        :param dir_path: The path to the documents.
         :return: The loaded documents.
         """
-        self._document_loader.path = path
+        self._document_loader.path = dir_path
         try:
             return self._document_loader.load()
         except Exception as e:

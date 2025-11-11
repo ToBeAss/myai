@@ -3,3 +3,6 @@ venv
 .DS_STORE
 __pycache__
 .my_secrets
+lib/
+chroma/
+data/

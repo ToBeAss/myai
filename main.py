@@ -1,98 +1,62 @@
-import sys
-import os
-import warnings
+from maritime_parser import Chapter3Parser
+from chroma_wrapper import Chroma_Wrapper
+import re
 
-# Suppress pygame warnings before pygame is imported (via text_to_speech)
-os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "1"  # Hide pygame greeting message
-warnings.filterwarnings("ignore", category=DeprecationWarning)  # Suppress all deprecation warnings
-warnings.filterwarnings("ignore", message=".*pkg_resources.*")  # Suppress pkg_resources warning
+# Load all Chapter 3 paragraphs (§ 13 - § 164) from the maritime regulations
+parser = Chapter3Parser("api/sf-20210210-0523.xml")
+all_paragraphs = parser.get_all()
 
-from lib.llm_wrapper import LLM_Wrapper
-from lib.memory import Memory
-from lib.agent import Agent
-from lib.text_to_speech import TextToSpeech
-from lib.prompt_loader import load_prompts
-from tools import (
-    read_from_memory_tool_blueprint, 
-    write_to_memory_tool_blueprint,
-    google_search_tool_blueprint
-)
+# Format paragraphs and extract IDs from paragraph numbers
+maritime_paragraphs = [parser.format(para) for para in all_paragraphs]
+# Extract numeric ID from paragraph number (e.g., "§ 113" -> "113")
+maritime_ids = [re.search(r'\d+', para['number']).group() for para in all_paragraphs]
 
-# Load agent configuration from prompts file
-prompts = load_prompts()
+# Embed and store in ChromaDB
+chroma = Chroma_Wrapper(parent_dir="api", agent_name="Sjøtrafikkforskriften", embedding_model_name="openai-text-embedding-3-large")
+chroma.add_text_chunks(maritime_paragraphs, ids=maritime_ids, print_statements=True)
 
-# Initialize the agent with loaded configuration
-llm = LLM_Wrapper(model_name="openai-gpt-4.1-mini")
-memory = Memory(history_limit=10)
-myai = Agent(llm=llm, memory=memory, agent_name=prompts['name'], description=prompts['description'])
 
-# Load and apply all instructions from configuration
-for instruction in prompts['instructions']:
-    myai.add_instruction(instruction)
+def get_paragraphs_by_route(route_description: str, k: int = 5, score_threshold: float = 0.2) -> list[dict]:
+    """Retrieve relevant maritime regulation paragraphs based on a route description.
+        Arguments:
+            route_description (str): Description of the maritime route.
+            k (int): Number of top relevant paragraphs to retrieve.
+            score_threshold (float): Minimum relevance score threshold.
+        Returns:
+                list: A list of dictionaries containing paragraph details and relevance scores.
+    """
+    result = chroma.retrieve_data_using_similarity_scores(query=route_description, k=k, score_threshold=score_threshold)
 
-# Add text-specific instructions
-#myai.add_instruction("Use emojis to make the conversation more engaging.")
+    paragraphs = []
 
-# Give the agent tools to work with
-myai.add_tool(read_from_memory_tool_blueprint.create_tool())
-myai.add_tool(write_to_memory_tool_blueprint.create_tool())
-myai.add_tool(google_search_tool_blueprint.create_tool())
+    for embedding in result:
+        paragraph = {
+            "id": embedding[0].id,
+            "subchapter": "",
+            "title": "",
+            "content": embedding[0].page_content,
+            "relevance_score": embedding[1]
+        }
+        paragraphs.append(paragraph)
+        
+    return paragraphs
 
-# Ask user to choose response mode
-print("\n🎯 Choose your interaction mode:")
-print("1. Text only (type and read)")
-print("2. Voice responses (type and listen)")
+# [MANUAL] Extract titles from 'seilingsbeskrivelser' (route descriptions)
+query="""
+Sauda - Skudefjorden Inbound
+Hylsfjorden'
+Innseiling til Kvitsøy fra N og E'
+Innseiling til Kvitsøy fra SE og S'
+Makrelleia'
+Nedstrandsfjorden'
+Nevøysundet'
+Revingssundet'
+Sandsfjorden'
+Saudafjorden'
+Straumbergsundet'
+Økstrafjorden' """
+print(f"🔎 Søker med seilingsbeskrivelse-titler:{query}")
+paragraphs = get_paragraphs_by_route(route_description=query, k=10, score_threshold=0.2)
+print("🛠️ Resultat:")
+print(paragraphs)
 print()
-
-while True:
-    mode_choice = input("Enter your choice (1 or 2): ").strip()
-    if mode_choice in ['1', '2']:
-        break
-    print("❌ Invalid choice. Please enter 1 or 2.")
-
-voice_mode = (mode_choice == '2')
-tts = None
-
-# Initialize text-to-speech if voice mode is selected
-if voice_mode:
-    print("\n🔧 Initializing text-to-speech system...")
-    tts = TextToSpeech(
-        voice_name="en-GB-Chirp3-HD-Achernar",  # Premium voice (100k free chars/month)
-        language_code="en-GB",
-        speaking_rate=1.1,
-        pitch=0.0,
-        enforce_free_tier=True,  # Stay within free tier
-        fallback_voice="en-GB-Wavenet-A"  # Fallback to Wavenet voice (4M free chars/month)
-    )
-    print("✅ Voice mode enabled! You'll hear responses in your earphones.")
-else:
-    print("✅ Text-only mode enabled!")
-
-while True:
-    print()
-    user_input = input("👤: ").strip()
-
-    if user_input.lower() == 'quit':
-        print("👋 Goodbye!")
-        break
-    
-    if not user_input:
-        continue
-    
-    # Use the agent to process the input and stream a response
-    if voice_mode:
-        # Voice mode: collect response and speak it
-        response_generator = myai.stream(user_input=user_input)
-        print("🤖: ", end="", flush=True)
-        tts.speak_streaming_async(response_generator, chunk_on=",.!?—", print_text=True, min_chunk_size=30)
-        print()
-    else:
-        # Text-only mode: stream to console
-        token_index = 0
-        for token in myai.stream(user_input=user_input):
-            if token_index == 0:
-                sys.stdout.write("🤖: ")
-            sys.stdout.write(token.content)
-            sys.stdout.flush()
-            token_index += 1
-        print()
