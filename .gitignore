@@ -1,7 +1,16 @@
 venv
+.venv
 .env
+.env.*
 .DS_STORE
 __pycache__
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
 .my_secrets
 lib/
 chroma/

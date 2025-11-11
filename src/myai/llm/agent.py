@@ -1,9 +1,10 @@
 from datetime import datetime
 from typing import Any, Optional, List, Dict
-from lib.llm_wrapper import LLM_Wrapper, Response
-from lib.memory import Memory
-from lib.chroma_wrapper import Chroma_Wrapper
-from lib.tool import Tool
+
+from .llm_wrapper import LLM_Wrapper, Response
+from .memory import Memory
+from .chroma_wrapper import Chroma_Wrapper
+from .tool import Tool
 
 class Agent:
     """A conversational agent that interacts with an LLM, maintains memory and can utilize tools such as database retrieval."""
