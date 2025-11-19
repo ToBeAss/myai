@@ -19,6 +19,8 @@ class Response:
         self.content = content
         self.response_metadata = response_metadata
         self.additional_kwargs = additional_kwargs
+        self.stage: Optional[str] = None
+        self.tool_name: Optional[str] = None
 
 
 class LLM_Wrapper:
@@ -121,11 +123,11 @@ class LLM_Wrapper:
         self._model_with_tools = self._model.bind_tools(tools, **kwargs)
         
 
-    def invoke(self, prompt: str, use_tools: bool = True) -> Any:
+    def invoke(self, prompt: str | List[Dict[str, str]], use_tools: bool = True) -> Any:
         """
         Invoke the model with a given prompt.
 
-        :param prompt: The given prompt.
+        :param prompt: The given prompt as a string or list of message dictionaries.
         :return: The LLM's response.
         """
         try:
@@ -137,11 +139,11 @@ class LLM_Wrapper:
             return self._handle_error(e)
         
 
-    def stream(self, prompt: str, use_tools: bool = True) -> Any:
+    def stream(self, prompt: str | List[Dict[str, str]], use_tools: bool = True) -> Any:
         """
         Stream tokens from the model with a given prompt.
 
-        :param prompt: The given prompt.
+        :param prompt: The given prompt as a string or list of message dictionaries.
         :return: Generator yielding tokens.
         """
         try:
@@ -164,23 +166,24 @@ class LLM_Wrapper:
         except Exception as e:
             yield self._handle_error(e)
         
-    def stream_with_tools(self, prompt: str) -> Any:
+    def stream_with_tools(self, prompt: str | List[Dict[str, str]]) -> Any:
         """
         Stream tokens from the model with a given prompt and bound tools.
 
-        :param prompt: The given prompt.
+        :param prompt: The given prompt as a string or list of message dictionaries.
         :return: Generator yielding tokens.
         """
         try:
             final_response = ""
             start_time = time.time()
-            for token in self._model_with_tools.stream(prompt):
-                final_response += token.content
-                if token.response_metadata:
-                    token.response_metadata['response_time'] = time.time() - start_time
-                    token.response_metadata['final_response'] = final_response
-                    #token.content += "\n\n"
-                yield token
+            if self._model_with_tools:
+                for token in self._model_with_tools.stream(prompt):
+                    final_response += token.content
+                    if token.response_metadata:
+                        token.response_metadata['response_time'] = time.time() - start_time
+                        token.response_metadata['final_response'] = final_response
+                        #token.content += "\n\n"
+                    yield token
         except Exception as e:
             yield self._handle_error(e)
 

@@ -42,7 +42,7 @@ class Agent:
         self._id: int = 0 # Implement uniquie ID generation
         self.name = agent_name
         self.description = description
-        self._instructions: List[Dict[str, str]] = []
+        self._instructions: List[Dict[str, Any]] = []
         self._tools: Dict[str, Dict] = {}
         self._llm = llm
         self._memory = memory
@@ -52,7 +52,7 @@ class Agent:
         self.add_instruction(f"Your name is {self.name}. {self.description}")
     
 
-    def _validate_input(self, user_input: str, search_type: str = None, k: int = None) -> None:
+    def _validate_input(self, user_input: str, search_type: Optional[str] = None, k: Optional[int] = None) -> None:
         """
         Validate the input parameters.
         
@@ -126,41 +126,71 @@ class Agent:
         return result.content
 
 
-    def _structure_prompt(self, user_input: str, retrieved_data: Optional[List] = [], tool_results: Optional[List] = []) -> str:
+    def _structure_prompt(self, user_input: str, retrieved_data: Optional[List] = [], tool_results: Optional[List] = [], assistant_message: Optional[Dict] = None) -> List[Dict[str, str]]:
         """
         Structure a prompt for the LLM based on user input and available context.
 
         :param user_input: The user input query.
         :param retrieved_data: The data retrieved from the Chroma wrapper.
         :param tool_results: The results from the tools used.
-        :return: The structured prompt.
+        :param assistant_message: The assistant's message containing tool_calls (if any).
+        :return: A list of message dictionaries with role and content.
         """
-        # Format instructions
-        formatted_instructions = Memory.format_messages(self._instructions)
+        # Start building the message array
+        messages = []
         
-        # Handle conversation history if available
-        formatted_conversation_history = ""
+        # Add each instruction as a separate system message
+        for instruction in self._instructions:
+            messages.append({
+                "role": "system",
+                "content": instruction["message"]
+            })
+        
+        # Add current date/time as system context
+        messages.append({
+            "role": "system",
+            "content": f"Today is {datetime.now().strftime('%A %d. %B %Y and the time is %H:%M')}."
+        })
+        
+        # Add conversation history if available
         if self._memory:
             conversation_history = self._memory.retrieve_memory()
-            formatted_conversation_history = Memory.format_messages(conversation_history)
-
-        # Format tool results
-        formatted_tool_results = Tool.format_tool_calls(tool_results)
-
-        # Format retrieved data
-        formatted_data = Chroma_Wrapper.format_data(retrieved_data)
-
-        # Build the prompt for the LLM
-        prompt = (
-            f"<instructions>\n{formatted_instructions}</instructions>\n\n"
-            f"<relevant_information>\n  Today is {datetime.now().strftime('%A %d. %B %Y and the time is %H:%M')}.\n</relevant_information>\n\n"
-            f"<conversation_history>\n{formatted_conversation_history}</conversation_history>\n\n"
-            f"<current_query>{user_input}</current_query>\n\n"
-            f"<tool_results>\n{formatted_tool_results}{formatted_data}</tool_results>\n\n"
-            "<response_guidelines>Respond to `current_query` based on your instructions and relevant context, including conversation history and the results of any tools, without repeating yourself.</response_guidelines>"
-        )
-        #print(f"\n--- Structured Prompt ---\n{prompt}\n--- End of Prompt ---\n")  # Debugging purposes
-        return prompt
+            for msg in conversation_history:
+                # Map internal roles to standard message roles
+                role = "assistant" if msg["role"] == "ai" else "user"
+                messages.append({
+                    "role": role,
+                    "content": msg["message"]
+                })
+        
+        # Add current user input
+        messages.append({
+            "role": "user",
+            "content": user_input
+        })
+        
+        # Add assistant message with tool_calls if tool results are being provided
+        if assistant_message and tool_results:
+            messages.append(assistant_message)
+        
+        # Add tool results if any
+        if tool_results:
+            for tool_result in tool_results:
+                # Format tool result content based on type
+                if isinstance(tool_result.get("result"), str):
+                    content = tool_result["result"]
+                else:
+                    content = str(tool_result["result"])
+                
+                # Add tool message with required fields for OpenAI API
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_result["id"],
+                    "content": content
+                })
+        
+        print(f"\n--- Structured Prompt ---\n{messages}\n--- End of Prompt ---\n")  # Debugging purposes
+        return messages
     
 
     def add_instruction(self, instruction: str, metadata: Optional[Dict[str, Any]] = None) -> None:
@@ -251,28 +281,41 @@ class Agent:
         if not isinstance(max_iterations, int) or max_iterations <= 0:
             raise ValueError("max_iterations must be a positive integer.")
         
-        # Store user input in memory if available
-        if self._memory:
-            self._memory.add_message(user_input, "human")
-        
         tool_results = []
+        user_input_added_to_memory = False
+        assistant_message_with_tool_calls = None
+        
         for iteration in range(max_iterations):
             # Get result from LLM
             #print(f"\n--- {self.name} ---\n--- Iteration {iteration + 1} ---")  # Debugging purposes
-            prompt = self._structure_prompt(user_input, tool_results=tool_results)
+            prompt = self._structure_prompt(user_input, tool_results=tool_results, assistant_message=assistant_message_with_tool_calls)
             #print(prompt)  # Debugging purposes
             if tool_results: print(Tool.format_tool_calls_short(tool_results))  # Debugging purposes
             result = self._llm.invoke(prompt, use_tools=True)
             # print(f"🤖{self.name}: {result.content}")  # Print the llm's response
 
-            # Store results in memory if available
+            # If no tool calls, this is the final response - store in memory and return
+            if not result.additional_kwargs.get("tool_calls"):
+                if self._memory and result.content:
+                    self._memory.add_message(user_input, "human")
+                    self._memory.add_message(result.content, "ai")
+                return result
+            
+            # Tool calls detected - store intermediate AI response in memory
             if result.response_metadata and result.content:
                 if self._memory:
+                    # Add user input to memory on first iteration only
+                    if not user_input_added_to_memory:
+                        self._memory.add_message(user_input, "human")
+                        user_input_added_to_memory = True
                     self._memory.add_message(result.content, "ai")
-
-            # If no tool calls, return the final answer
-            if not result.additional_kwargs.get("tool_calls"):
-                return result
+            
+            # Store the assistant message with tool_calls for the next iteration
+            assistant_message_with_tool_calls = {
+                "role": "assistant",
+                "content": result.content or "",
+                "tool_calls": result.additional_kwargs["tool_calls"]
+            }
             
             # Print each tool call before calling them
             #for tool_call in result.additional_kwargs["tool_calls"]:
@@ -289,8 +332,16 @@ class Agent:
         
         # If max iterations reached, formulate a final response
         #print(f"🤖{self.name}: Maximum iterations ({max_iterations}) reached, formulating final answer...")  # Debugging purposes
-        prompt = self._structure_prompt(user_input, tool_results=tool_results)
-        return self._llm.invoke(prompt, use_tools=False)
+        prompt = self._structure_prompt(user_input, tool_results=tool_results, assistant_message=assistant_message_with_tool_calls)
+        final_result = self._llm.invoke(prompt, use_tools=False)
+        
+        # Store final response in memory (user input may already be added if tools were used)
+        if self._memory and final_result.content:
+            if not user_input_added_to_memory:
+                self._memory.add_message(user_input, "human")
+            self._memory.add_message(final_result.content, "ai")
+        
+        return final_result
     
 
     def stream(self, user_input: str, max_iterations: int = 3) -> Any:
@@ -304,10 +355,6 @@ class Agent:
         self._validate_input(user_input)
         if not isinstance(max_iterations, int) or max_iterations <= 0:
             raise ValueError("max_iterations must be a positive integer.")
-        
-        # Store user input in memory if available
-        if self._memory:
-            self._memory.add_message(user_input, "human")
 
         def update_stage(token: Response, stage: str, tool: Optional[str] = None) -> Response:
             """Helper function to update stage information on tokens"""
@@ -319,29 +366,47 @@ class Agent:
         yield update_stage(Response(""), self.STAGE_ORCHESTRATOR)
 
         tool_results = []
+        user_input_added_to_memory = False
+        assistant_message_with_tool_calls = None
+        
         for iteration in range(max_iterations):
             # Get result generator from LLM
             #print(f"\n--- {self.name} ---\n--- Iteration {iteration + 1} ---")  # Debugging purposes
-            prompt = self._structure_prompt(user_input, tool_results=tool_results)
+            prompt = self._structure_prompt(user_input, tool_results=tool_results, assistant_message=assistant_message_with_tool_calls)
             #print(prompt)  # Debugging purposes
             if tool_results: print(Tool.format_tool_calls_short(tool_results))  # Debugging purposes
             result_generator = self._llm.stream(prompt, use_tools=True)
 
             # Stream the result token by token and collect tool calls
-            result = None
+            result: Optional[Response] = None
             for token in Tool.collect_tool_calls_from_stream(result_generator):
                 yield update_stage(token, self.STAGE_THINKING)
                 result = token
 
-            # Store intermediate results in memory if available
-            if result.response_metadata and result.response_metadata["final_response"]:
-                if self._memory:
+            # If no tool calls, this is the final response - store in memory and return
+            if not result or not result.additional_kwargs or not result.additional_kwargs.get("tool_calls"):
+                if self._memory and result and result.response_metadata and result.response_metadata.get("final_response"):
+                    self._memory.add_message(user_input, "human")
                     self._memory.add_message(result.response_metadata["final_response"], "ai")
-
-            # If no tool calls, return the final answer
-            if not result.additional_kwargs.get("tool_calls"):
-                yield update_stage(result, self.STAGE_CONTENT)
+                if result:
+                    yield update_stage(result, self.STAGE_CONTENT)
                 return result
+            
+            # Tool calls detected - store intermediate AI response in memory
+            if result and result.response_metadata and result.response_metadata["final_response"]:
+                if self._memory:
+                    # Add user input to memory on first iteration only
+                    if not user_input_added_to_memory:
+                        self._memory.add_message(user_input, "human")
+                        user_input_added_to_memory = True
+                    self._memory.add_message(result.response_metadata["final_response"], "ai")
+            
+            # Store the assistant message with tool_calls for the next iteration
+            assistant_message_with_tool_calls = {
+                "role": "assistant",
+                "content": result.response_metadata.get("final_response", "") if result and result.response_metadata else "",
+                "tool_calls": result.additional_kwargs["tool_calls"] if result else []
+            }
             
             # Print each tool call before calling them
             #for tool_call in result.additional_kwargs["tool_calls"]:
@@ -364,6 +429,16 @@ class Agent:
         
         # If max iterations reached, formulate a final response
         #print(f"🤖{self.name}: Maximum iterations ({max_iterations}) reached, formulating final answer...")  # Debugging purposes
-        prompt = self._structure_prompt(user_input, tool_results=tool_results)
+        prompt = self._structure_prompt(user_input, tool_results=tool_results, assistant_message=assistant_message_with_tool_calls)
+        
+        # Collect final response for memory
+        final_response = ""
         for token in self._llm.stream(prompt, use_tools=False):
+            final_response += token.content
             yield update_stage(token, self.STAGE_CONTENT)
+        
+        # Store final response in memory (user input may already be added if tools were used)
+        if self._memory and final_response:
+            if not user_input_added_to_memory:
+                self._memory.add_message(user_input, "human")
+            self._memory.add_message(final_response, "ai")
