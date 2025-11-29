@@ -5,7 +5,6 @@ from langchain_openai import AzureChatOpenAI, ChatOpenAI
 from openai import BadRequestError, APIConnectionError
 # You can import other models here in the future (e.g., OpenAI, HuggingFace)
 
-
 class Response:
     """
     A simple wrapper class to standardize responses from the model.
@@ -147,7 +146,6 @@ class LLM_Wrapper:
         :return: Generator yielding tokens.
         """
         try:
-            final_response = ""
             start_time = time.time()
 
             if use_tools and self._model_with_tools:
@@ -156,34 +154,12 @@ class LLM_Wrapper:
                 generator = self._model.stream(prompt)
 
             for token in generator:
-                final_response += token.content
+                # Note response_time on last token
                 if token.response_metadata:
+                    # Add token counter (input/output)
                     token.response_metadata['response_time'] = time.time() - start_time
-                    token.response_metadata['final_response'] = final_response
-                    #token.content += "\n\n"
                 yield token
-                
-        except Exception as e:
-            yield self._handle_error(e)
-        
-    def stream_with_tools(self, prompt: str | List[Dict[str, str]]) -> Any:
-        """
-        Stream tokens from the model with a given prompt and bound tools.
 
-        :param prompt: The given prompt as a string or list of message dictionaries.
-        :return: Generator yielding tokens.
-        """
-        try:
-            final_response = ""
-            start_time = time.time()
-            if self._model_with_tools:
-                for token in self._model_with_tools.stream(prompt):
-                    final_response += token.content
-                    if token.response_metadata:
-                        token.response_metadata['response_time'] = time.time() - start_time
-                        token.response_metadata['final_response'] = final_response
-                        #token.content += "\n\n"
-                    yield token
         except Exception as e:
             yield self._handle_error(e)
 

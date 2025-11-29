@@ -1,5 +1,7 @@
 from typing import List, Dict, Any, Optional
 
+# IMPLEMENT VECTOR STORE IN MEMORY
+
 class Memory:
     """Handles conversation history for an AI agent."""
 
