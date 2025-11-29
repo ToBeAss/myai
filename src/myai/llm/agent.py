@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Optional, List, Dict, Union, Generator
 from langchain_core.messages import AIMessage
 
-from .llm_wrapper import LLM_Wrapper, Response
+from .llm_wrapper import LLM_Wrapper
 from .memory import Memory
 from .chroma_wrapper import Chroma_Wrapper
 from .tool import Tool
@@ -126,34 +126,87 @@ class Agent:
         self.add_tool(agent_tool, **kwargs)
 
 
-    def get_messages(self) -> List[Dict[str, str]]:
+    def _get_instructions(self) -> List[Dict[str, str]]:
         """
-        Retrieves the current list of messages, containing instructions and conversation history if available.
-
-        :return: A list of message dictionaries.
-        """
+        Get static system instructions.
         
-        # Add static instructions
-        messages = self._instructions.copy()
+        :return: List of system instruction messages.
+        """
+        return self._instructions.copy()
 
-        # Add dynamic instructions
-        messages.append({
-            "role": "system",
-            "content": f"Today is {datetime.now().strftime('%A %d. %B %Y and the time is %H:%M')}."
-        })
 
-        # Add conversation history if available
+    def _get_conversation_history(self) -> List[Dict[str, Any]]:
+        """
+        Get past conversation messages from memory.
+        
+        :return: List of user/assistant message pairs from conversation history.
+        """
+        return self._memory.retrieve_memory() if self._memory else []
+    
+
+    def _build_current_turn(self, user_input: str) -> Dict[str, str]:
+        """
+        Build current turn message with dynamic context and user query.
+        
+        Wraps user input with dynamic contextual information such as:
+        - Current datetime
+        - Future: Upcoming events, retrieved memories, etc.
+        
+        :param user_input: The user's query.
+        :return: Single user message dictionary with [CONTEXT] block and query.
+        """
+        query_parts = [
+            "[CONTEXT]",
+            f"Current datetime: {datetime.now().strftime('%A, %B %d, %Y at %H:%M')}",
+            "[/CONTEXT]",
+            "",
+            "Use the context above and any available tools to respond to the following:",
+            "",
+            user_input
+        ]
+        
+        return {
+            "role": "user",
+            "content": "\n".join(query_parts)
+        }
+
+
+    def build_prompt(self, user_input: str) -> List[Dict[str, str]]:
+        """
+        Build complete prompt by combining all message parts.
+        
+        Order optimized for prompt caching:
+        1. Static instructions (cacheable)
+        2. Conversation history (mostly cacheable)
+        3. Current turn with dynamic context (changes frequently)
+        
+        :param user_input: The user's query.
+        :return: Complete list of messages ready for LLM invocation.
+        """
+        return (
+            self._get_instructions() +
+            self._get_conversation_history() +
+            [self._build_current_turn(user_input)]
+        )
+
+
+    def _handle_tool_calls(self, tool_calls: List[Dict[str, Any]], ai_content: str) -> List[Dict[str, Any]]:
+        """Process tool calls and append results to current query."""
+        tool_messages = [{"role": "ai", "content": ai_content, "tool_calls": tool_calls}]
+        
+        for tool_call in tool_calls:
+            print(f"🛠️ {tool_call['function']['name']}({tool_call['function']['arguments']})")
+            tool_result = Tool.process_tool_call(tool_call, self._tools)
+            tool_messages.append({"role": "tool", "tool_call_id": tool_result["id"], "content": tool_result["result"]})
+
+        return tool_messages
+
+
+    def _save_conversation(self, user_input: str, ai_content: str) -> None:
+        """Save user input and AI response to memory."""
         if self._memory:
-            conversation_history = self._memory.retrieve_memory()
-            for msg in conversation_history:
-                # Map internal roles to standard message roles
-                role = "assistant" if msg["role"] == "ai" else "user"
-                messages.append({
-                    "role": role,
-                    "content": msg["message"]
-                })
-
-        return messages
+            self._memory.add_message(user_input, "human")
+            self._memory.add_message(ai_content, "ai")
 
 
     def invoke(self, user_input: str, max_iterations: int = 3, is_streaming: bool = False) -> Any:
@@ -165,46 +218,76 @@ class Agent:
         :param is_streaming: Whether to stream the response or not.
         :return: The LLM's response or a generator yielding streamed responses.
         """
-        
         # Validate inputs
         self._validate_input(user_input)
         if not isinstance(max_iterations, int) or max_iterations <= 0:
             raise ValueError("max_iterations must be a positive integer.")
-        if not isinstance(is_streaming, bool):
-            raise TypeError("is_streaming must be a boolean value.")
         
-        messages = self.get_messages()
-        current_query = [{"role": "user", "content": user_input}]
+        # Route to appropriate implementation based on streaming flag
+        if is_streaming:
+            return self._stream(user_input, max_iterations)
+        else:
+            return self._invoke(user_input, max_iterations)
+    
+
+    def _invoke(self, user_input: str, max_iterations: int = 3) -> AIMessage:
+        """
+        Invokes the agent to process user input (non-streaming).
+
+        :param user_input: The user input query.
+        :param max_iterations: The maximum number of iterations to process tools.
+        :return: The LLM's response.
+        """
+        
+        prompt_messages = self.build_prompt(user_input)
 
         for iteration in range(max_iterations):
             is_last_iteration = (iteration == max_iterations - 1)
-            prompt = messages + current_query
-            result: Optional[Response] = None
+            
+            result = self._llm.invoke(prompt_messages, use_tools=not is_last_iteration)
 
-            # Use stream or invoke based on is_streaming flag
-            if is_streaming:
-                content = ""
-                result_generator = self._llm.stream(prompt, use_tools=not is_last_iteration)
-                # Collect result while streaming
-                for token in Tool.collect_tool_calls_from_stream(result_generator):
-                    content += token.content
-                    yield token  # Yield each token as it is received
-                    result = token
-            else:
-                result = self._llm.invoke(prompt, use_tools=not is_last_iteration)
-                content = result.content
+            # Convert content to string if it's a list
+            content_str = result.content if isinstance(result.content, str) else str(result.content)
 
             if result.additional_kwargs.get("tool_calls"):
-                tool_calls = result.additional_kwargs["tool_calls"]
-                current_query.append({"role": "ai", "content": content, "tool_calls": tool_calls})
-                
-                for tool_call in tool_calls:
-                    print(f"🛠️ {tool_call['function']['name']}({tool_call['function']['arguments']})")
-                    tool_result = Tool.process_tool_call(tool_call, self._tools)
-                    current_query.append({"role": "tool", "tool_call_id": tool_result["id"], "content": tool_result["result"]})
+                prompt_messages.extend(self._handle_tool_calls(tool_calls=result.additional_kwargs["tool_calls"], ai_content=content_str))
             else:
-                if self._memory:
-                    # Don't store tool calls and results in memory?
-                    self._memory.add_message(user_input, "human")
-                    self._memory.add_message(content, "ai")
+                self._save_conversation(user_input, ai_content=content_str)
                 return result
+        
+        # If we've exhausted iterations, return the last result
+        raise RuntimeError("Max iterations reached without a final response")
+    
+
+    def _stream(self, user_input: str, max_iterations: int = 3) -> Generator[AIMessage, None, None]:
+        """
+        Invokes the agent to process user input (streaming).
+
+        :param user_input: The user input query.
+        :param max_iterations: The maximum number of iterations to process tools.
+        :return: A generator yielding streamed responses.
+        """
+
+        prompt_messages = self.build_prompt(user_input)
+
+        for iteration in range(max_iterations):
+            is_last_iteration = (iteration == max_iterations - 1)
+            
+            result_generator = self._llm.stream(prompt_messages, use_tools=not is_last_iteration)
+            result: Optional[AIMessage] = None
+            content = ""
+            
+            # Collect result while streaming
+            for token in Tool.collect_tool_calls_from_stream(result_generator):
+                content += token.content
+                yield token
+                result = token
+            
+            # Convert content to string if it's a list
+            content_str = content if isinstance(content, str) else str(content)
+
+            if result and result.additional_kwargs.get("tool_calls"):
+                prompt_messages.extend(self._handle_tool_calls(tool_calls=result.additional_kwargs["tool_calls"], ai_content=content_str))
+            else:
+                self._save_conversation(user_input, ai_content=content_str)
+                return

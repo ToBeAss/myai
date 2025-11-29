@@ -31,7 +31,7 @@ prompts = load_prompts()
 
 # Initialize the agent with loaded configuration
 llm = LLM_Wrapper(model_name="openai-gpt-4.1-mini")
-memory = Memory(history_limit=10)
+memory = Memory()
 myai = Agent(llm=llm, memory=memory, agent_name=prompts['name'], description=prompts['description'])
 
 # Initialize speech-to-text system
