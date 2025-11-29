@@ -1,6 +1,6 @@
 import json
 import re
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Callable
 
 class Tool:
     """ A class to represent a tool in the assistant. """
@@ -28,7 +28,7 @@ class Tool:
     # Regex pattern for valid tool names
     VALID_NAME_PATTERN = r'^[a-zA-Z0-9_\.-]+$'
 
-    def __init__(self, name: str, function: callable, description: str):
+    def __init__(self, name: str, function: Callable, description: str):
         """
         Initialize a tool with a name, description, and function.
 
@@ -189,7 +189,7 @@ class Tool:
                 continue
                 
             chunk = token.tool_call_chunks[0]
-            chunk_index = chunk['index']
+            chunk_index = chunk.get('index')
             
             # If new tool call detected, finalize previous one
             if chunk_index != current_index:
@@ -200,10 +200,10 @@ class Tool:
                     
                 # Initialize new tool call
                 current_tool_call = {
-                    "id": chunk['id'],
+                    "id": chunk.get('id'),
                     "type": "function",
                     "function": {
-                        "name": chunk['name'],
+                        "name": chunk.get('name'),
                         "arguments": None,
                     },
                     "index": chunk_index,
@@ -211,7 +211,7 @@ class Tool:
                 current_index = chunk_index
                 
             # Accumulate arguments for current tool call
-            accumulated_args += chunk['args']
+            accumulated_args += chunk.get('args', '')
 
         # Finalize the last tool call if any
         if current_index is not None:
@@ -224,7 +224,7 @@ class Tool:
 
     
     @staticmethod
-    def format_tool_calls(tool_calls: List[Dict[str, str]]) -> str:
+    def format_tool_calls(tool_calls: List[Dict[str, Any]]) -> str:
         """
         Formats a list of tool calls into a string.
 
@@ -237,7 +237,7 @@ class Tool:
         return formatted_tool_calls
     
     @staticmethod
-    def format_tool_calls_short(tool_calls: List[Dict[str, str]]) -> str:
+    def format_tool_calls_short(tool_calls: List[Dict[str, Any]]) -> str:
         """
         Formats a list of tool calls into a string.
 
@@ -262,7 +262,7 @@ class ToolBlueprint:
     with different descriptions for different agents or use cases.
     """
 
-    def __init__(self, name: str, function: callable, base_description: str):
+    def __init__(self, name: str, function: Callable, base_description: str):
         """
         Initialize a tool blueprint.
 
@@ -274,7 +274,7 @@ class ToolBlueprint:
         self.function = function
         self.base_description = base_description
     
-    def create_tool(self, name_suffix: Optional[str] = "", additional_description: Optional[str] = "", custom_function: Optional[callable] = None) -> Tool:
+    def create_tool(self, name_suffix: Optional[str] = "", additional_description: Optional[str] = "", custom_function: Optional[Callable] = None) -> Tool:
         """
         Create a new Tool instance from this blueprint.
         

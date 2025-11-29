@@ -1,9 +1,10 @@
 import os, time
 from dotenv import load_dotenv
-from typing import Any, Optional, Dict, List, Generator
+from typing import Any, Optional, Dict, List, Generator, Callable, Union
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import AIMessage
 from openai import BadRequestError, APIConnectionError
+from pydantic import SecretStr
 # You can import other models here in the future (e.g., OpenAI, HuggingFace)
 
 class LLM_Wrapper:
@@ -34,21 +35,24 @@ class LLM_Wrapper:
         :return: The initialized language model.
         """
         if model_name == "openai-gpt-4.1":
+            api_key = os.getenv("OPENAI_API_KEY")
             return ChatOpenAI(
                 model = "gpt-4.1",
-                api_key = os.getenv("OPENAI_API_KEY"),
+                api_key = SecretStr(api_key) if api_key else None,
                 **kwargs # Pass additional parameters
             )
         elif model_name == "openai-gpt-4.1-mini":
+            api_key = os.getenv("OPENAI_API_KEY")
             return ChatOpenAI(
                 model = "gpt-4.1-mini",
-                api_key = os.getenv("OPENAI_API_KEY"),
+                api_key = SecretStr(api_key) if api_key else None,
                 **kwargs # Pass additional parameters
             )
         elif model_name == "openai-gpt-4.1-nano":
+            api_key = os.getenv("OPENAI_API_KEY")
             return ChatOpenAI(
                 model = "gpt-4.1-nano",
-                api_key = os.getenv("OPENAI_API_KEY"),
+                api_key = SecretStr(api_key) if api_key else None,
                 **kwargs # Pass additional parameters
             )
         else: 
@@ -86,15 +90,15 @@ class LLM_Wrapper:
             return AIMessage("An unexpected error occurred. Please try again later.")
 
 
-    def bind_tools(self, tools: List[callable], **kwargs) -> None:
+    def bind_tools(self, tools: List[Union[Callable, Dict[str, Any]]], **kwargs) -> None:
         """
         Bind a list of tools to the language model.
         
-        :param tools: A list of tool functions.
+        :param tools: A list of tool functions or tool dictionaries.
         :return: The language model with the bound tools.
         """
         if not isinstance(tools, list):
-            raise TypeError("Tools must be a list of functions")
+            raise TypeError("Tools must be a list")
         self._model_with_tools = self._model.bind_tools(tools, **kwargs)
         
 
