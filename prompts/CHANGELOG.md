@@ -54,6 +54,20 @@ First stable, production-ready version of Sam's personality configuration.
 
 ---
 
+## [1.0.1] - 2025-11-30
+
+### Added
+- New `tool_usage` category with dedicated instructions for tool acknowledgments
+- Tool usage acknowledgment instruction: Brief 2-4 word statements before tool calls ("On it!", "Let me check", "Looking that up") optimized for voice delivery
+- Explicit timing requirement: acknowledgment must come BEFORE tool call, not after
+
+### Changed
+- Tightened acknowledgment from "under 5 words" to "2-4 words max" for better voice conciseness
+- Moved tool-related instruction from `general` to dedicated `tool_usage` category
+- Updated instruction count: 18 total (5 general, 2 tool_usage, rest unchanged)
+
+---
+
 ## [Unreleased]
 
 ### Ideas for Future Versions
@@ -68,6 +82,7 @@ First stable, production-ready version of Sam's personality configuration.
 
 | Version | Date | Status | Key Changes |
 |---------|------|--------|-------------|
+| 1.0.1 | 2025-11-30 | ✅ Production | Added tool usage acknowledgment instruction |
 | 1.0.0 | 2025-10-05 | ✅ Production | Initial stable release, 16 instructions, zero false positives |
 
 ---
