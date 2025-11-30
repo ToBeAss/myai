@@ -39,6 +39,6 @@ class Memory:
         """
         Retrieves stored conversation history.
 
-        :return: A copy of the conversation history to prevent external mutation.
+        :return: The conversation history.
         """
-        return self._conversation_history.copy()
+        return self._conversation_history

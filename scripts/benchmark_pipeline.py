@@ -395,7 +395,7 @@ class PipelineBenchmark:
         print("\n  🤖 Generating LLM response...")
         
         llm_start = time.perf_counter()
-        response_generator = self.agent.stream(user_input=full_transcription)
+        response_generator = self.agent.invoke(user_input=full_transcription, is_streaming=True)
         
         tokens = []
         token_times = []

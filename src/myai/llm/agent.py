@@ -132,7 +132,7 @@ class Agent:
         
         :return: List of system instruction messages.
         """
-        return self._instructions.copy()
+        return self._instructions
 
 
     def _get_conversation_history(self) -> List[Dict[str, Any]]:
