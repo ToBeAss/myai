@@ -30,7 +30,7 @@ prompts = load_prompts()
 
 # Initialize the agent with loaded configuration
 llm = LLM_Wrapper(model_name="openai-gpt-4.1-mini")
-memory = Memory(history_limit=10)
+memory = Memory()
 myai = Agent(llm=llm, memory=memory, agent_name=prompts['name'], description=prompts['description'])
 
 # Load and apply all instructions from configuration
@@ -89,7 +89,7 @@ while True:
     # Use the agent to process the input and stream a response
     if voice_mode:
         # Voice mode: collect response and speak it
-        response_generator = myai.stream(user_input=user_input)
+        response_generator = myai.invoke(user_input=user_input, is_streaming=True)
         print("🤖: ", end="", flush=True)
         assert tts is not None
         tts.speak_streaming_async(response_generator, chunk_on=",.!?—", print_text=True, min_chunk_size=30)
@@ -97,7 +97,7 @@ while True:
     else:
         # Text-only mode: stream to console
         token_index = 0
-        for token in myai.stream(user_input=user_input):
+        for token in myai.invoke(user_input=user_input, is_streaming=True):
             if token_index == 0:
                 sys.stdout.write("🤖: ")
             sys.stdout.write(token.content)

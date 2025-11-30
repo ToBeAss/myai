@@ -1,12 +1,13 @@
 import os
 from dotenv import load_dotenv
-from typing import Any, List
+from typing import Any, List, Optional
 from langchain_chroma import Chroma
 from langchain_openai import AzureOpenAIEmbeddings
 from openai import APIConnectionError
 from langchain_community.document_loaders import PyPDFDirectoryLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain.schema import Document
+from pydantic import SecretStr
 
 class Chroma_Wrapper:
     """
@@ -41,18 +42,20 @@ class Chroma_Wrapper:
         :return: The initialized embedding model.
         """
         if model_name == "azure-text-embedding-3-large":
+            api_key = os.getenv("AZURE_OPENAI_API_KEY")
             return AzureOpenAIEmbeddings(
                 azure_deployment = "text-embedding-3-large",
                 api_version = "2023-05-15",
-                api_key = os.getenv("AZURE_OPENAI_API_KEY"),
+                api_key = SecretStr(api_key) if api_key else None,
                 azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT"),
                 **kwargs # Pass additional parameters
             )
         elif model_name == "azure-text-embedding-3-small":
+            api_key = os.getenv("AZURE_OPENAI_API_KEY")
             return AzureOpenAIEmbeddings(
                 azure_deployment = "text-embedding-3-small",
                 api_version = "2023-05-15",
-                api_key = os.getenv("AZURE_OPENAI_API_KEY"),
+                api_key = SecretStr(api_key) if api_key else None,
                 azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT"),
                 **kwargs # Pass additional parameters
             )
@@ -109,6 +112,7 @@ class Chroma_Wrapper:
         :return: The indexed chunks.
         """
         previous_page = None
+        current_chunk = 0
         for chunk in chunks:
             current_page = f"{chunk.metadata.get("source")}:{chunk.metadata.get("page")}"
             if current_page == previous_page:
@@ -171,7 +175,7 @@ class Chroma_Wrapper:
         return vectors
     
 
-    def add_text_chunks(self, contents: List[str], ids: List[str] = None, print_statements: bool = False) -> List:
+    def add_text_chunks(self, contents: List[str], ids: Optional[List[str]] = None, print_statements: bool = False) -> List:
         """
         Add multiple text chunks to the VectorDB.
 
@@ -184,6 +188,10 @@ class Chroma_Wrapper:
             raise TypeError("contents must be a list.")
         if not isinstance(ids, list) and ids is not None:
             raise TypeError("ids must be a list or None.")
+        
+        # Use ids if provided, otherwise generate indices
+        if ids is None:
+            ids = [str(i) for i in range(len(contents))]
         
         documents = [Document(page_content=content, id=id) for content, id in zip(contents, ids)] 
         vectors = self._embed_chunks(documents, print_statements)

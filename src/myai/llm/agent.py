@@ -1,7 +1,8 @@
 from datetime import datetime
-from typing import Any, Optional, List, Dict
+from typing import Any, Optional, List, Dict, Union, Generator
+from langchain_core.messages import AIMessage
 
-from .llm_wrapper import LLM_Wrapper, Response
+from .llm_wrapper import LLM_Wrapper
 from .memory import Memory
 from .chroma_wrapper import Chroma_Wrapper
 from .tool import Tool
@@ -11,19 +12,13 @@ class Agent:
 
     # Maximum allowed length for user inputs
     MAX_USER_INPUT_LENGTH = 4096
-    # Define possible stages
-    STAGE_ORCHESTRATOR = "orchestrator"
-    STAGE_THINKING = "thinking"
-    STAGE_TOOL = "tool"
-    STAGE_CONTENT = "content"
 
-    def __init__(self, llm: LLM_Wrapper, memory: Optional[Memory] = None, chroma: Optional[Chroma_Wrapper] = None, agent_name: str = "Agent", description: str = "You are an AI assistant."):
+    def __init__(self, llm: LLM_Wrapper, memory: Optional[Memory] = None, agent_name: str = "Agent", description: str = "You are an AI assistant."):
         """
         Initializes the agent with an LLM instance and an optional memory and chroma module.
 
         :param llm: An instance of LLM_Wrapper.
         :param memory: An optional instance of Memory.
-        :param chroma: An optional instance of Chroma_Wrapper.
         :param agent_name: The name of the agent.
         :param description: A description of the agent's capabilities.
         """
@@ -32,8 +27,6 @@ class Agent:
             raise TypeError("llm must be an instance of LLM_Wrapper")
         if memory is not None and not isinstance(memory, Memory):
             raise TypeError("memory must be an instance of Memory or None")
-        if chroma is not None and not isinstance(chroma, Chroma_Wrapper):
-            raise TypeError("retriever must be an instance of Retriever or None")
         if not isinstance(agent_name, str):
             raise TypeError("agent_name must be a string")
         if not isinstance(description, str):
@@ -46,19 +39,16 @@ class Agent:
         self._tools: Dict[str, Dict] = {}
         self._llm = llm
         self._memory = memory
-        self._chroma = chroma
 
         # Add init instructions to inform the agent of its identity
-        self.add_instruction(f"Your name is {self.name}. {self.description}")
+        self.add_instruction(self.description)
     
 
-    def _validate_input(self, user_input: str, search_type: str = None, k: int = None) -> None:
+    def _validate_input(self, user_input: str) -> None:
         """
         Validate the input parameters.
         
         :param user_input: The user input to validate.
-        :param search_type: Optional search type to validate.
-        :param k: Optional number of results to validate.
         :raises ValueError: If any of the inputs are invalid.
         :raises TypeError: If any of the inputs are of incorrect type.
         """
@@ -72,123 +62,19 @@ class Agent:
                 f"User input exceeds maximum length of {self.MAX_USER_INPUT_LENGTH} characters. "
                 f"Current length: {current_length}. Please shorten your input by "
                 f"{current_length - self.MAX_USER_INPUT_LENGTH} characters."
-            )    
-        
-        if search_type is not None and not isinstance(search_type, str):
-            raise TypeError("Search type must be a string.")
-        if k is not None and not isinstance(k, int):
-            raise TypeError("k must be an integer.")
+            )
     
 
-    def _retrieve_data(self, query: str, search_type: str = "similarity_scores", k: int = 5, **kwargs) -> List:
-        """
-        Retrieve data based on the query and search type.
-
-        :param query: The query to search for.
-        :param search_type: The type of search to perform.
-        :param k: The number of results to return.
-        :param kwargs: Additional keyword arguments for the retriever.
-        :return: The retrieved data as a list.
-        """
-        if not self._chroma:
-            print("Chroma wrapper is not available.")
-            return []
-        
-        if search_type == "mmr":
-            retrieved_data = self._chroma.retrieve_data_using_mmr(query=query, k=k, **kwargs)
-        elif search_type == "similarity_scores":
-            retrieved_data = self._chroma.retrieve_data_using_similarity_scores(query=query, k=k, **kwargs)
-        else:
-            retrieved_data = []
-        return retrieved_data
-        
-
-    def _reprompt(self, user_input: str) -> str:
-        """
-        Reprompts the user's query based on the previous query and context window.
-
-        :param user_input: The user input query.
-        :return: The reprompted query.
-        """
-        # Handle conversation history if available
-        formatted_conversation_history = ""
-        if self._memory:
-            conversation_history = self._memory.retrieve_memory()
-            formatted_conversation_history = Memory.format_messages(conversation_history)
-
-        # Build the prompt for the LLM
-        prompt = (
-            f"<conversation_history>\n{formatted_conversation_history}</conversation_history>\n\n"
-            f"<current_query>{user_input}</current_query>\n\n"
-            "<response_guidelines>Rephrase the above question from the user based on the instructions and any available context to better be used in a RAG retrieval search. Include important keywords that could be relevant to the user's question for the retrieval to work better.</response_guidelines>"
-        )
-        result = self._llm.invoke(prompt)
-        return result.content
-
-
-    def _structure_prompt(self, user_input: str, retrieved_data: Optional[List] = [], tool_results: Optional[List] = []) -> str:
-        """
-        Structure a prompt for the LLM based on user input and available context.
-
-        :param user_input: The user input query.
-        :param retrieved_data: The data retrieved from the Chroma wrapper.
-        :param tool_results: The results from the tools used.
-        :return: The structured prompt.
-        """
-        # Format instructions
-        formatted_instructions = Memory.format_messages(self._instructions)
-        
-        # Handle conversation history if available
-        formatted_conversation_history = ""
-        if self._memory:
-            conversation_history = self._memory.retrieve_memory()
-            formatted_conversation_history = Memory.format_messages(conversation_history)
-
-        # Format tool results
-        formatted_tool_results = Tool.format_tool_calls(tool_results)
-
-        # Format retrieved data
-        formatted_data = Chroma_Wrapper.format_data(retrieved_data)
-
-        # Build the prompt for the LLM
-        prompt = (
-            f"<instructions>\n{formatted_instructions}</instructions>\n\n"
-            f"<relevant_information>\n  Today is {datetime.now().strftime('%A %d. %B %Y and the time is %H:%M')}.\n</relevant_information>\n\n"
-            f"<conversation_history>\n{formatted_conversation_history}</conversation_history>\n\n"
-            f"<current_query>{user_input}</current_query>\n\n"
-            f"<tool_results>\n{formatted_tool_results}{formatted_data}</tool_results>\n\n"
-            "<response_guidelines>Respond to `current_query` based on your instructions and relevant context, including conversation history and the results of any tools, without repeating yourself.</response_guidelines>"
-        )
-        #print(f"\n--- Structured Prompt ---\n{prompt}\n--- End of Prompt ---\n")  # Debugging purposes
-        return prompt
-    
-
-    def add_instruction(self, instruction: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+    def add_instruction(self, instruction: str) -> None:
         """
         Adds a system prompt, dubbed instruction.
 
         :param instruction: Instruction to be stored.
-        :param metadata: Optional metadata associated with the instruction.
         """
         if not isinstance(instruction, str):
             raise ValueError("Instruction must be a string.")
-        if metadata is not None and not isinstance(metadata, dict):
-            raise ValueError("Metadata must be a dictionary or None.")
         
-        self._instructions.append({"role": "system", "message": instruction, "metadata": metadata})
-
-
-    def add_documents(self, path: str = "data", print_statements: bool = False) -> None:
-        """
-        Adds documents to the Chroma wrapper for retrieval.
-
-        :param path: The path to the directory containing documents.
-        :param print_statements: Whether to print statements for debugging.
-        """
-        if not self._chroma:
-            raise ValueError("Chroma wrapper is not available.")
-        
-        self._chroma.add_documents(path, print_statements)
+        self._instructions.append({"role": "system", "content": instruction})
 
 
     def add_tool(self, tool: Tool, **kwargs) -> None:
@@ -201,8 +87,10 @@ class Agent:
             raise ValueError("Tool must be an instance of Tool.")
         
         # Add instructions for tool usage when the first tool is added
+        """
         if not self._tools:
             self.add_instruction(Tool.GENERAL_TOOL_INSTRUCTIONS)
+        """
 
         self._tools[tool.name] = tool.get_tool()
         self._llm.bind_tools(list(self._tools.values()), **kwargs)
@@ -235,135 +123,171 @@ class Agent:
             {description}
             """
         )
-
         self.add_tool(agent_tool, **kwargs)
 
 
-    def invoke(self, user_input: str, max_iterations: int = 3) -> Any:
+    def _get_instructions(self) -> List[Dict[str, str]]:
         """
-        Processes user input, structures a prompt and invokes the LLM.
-
-        :param user_input: The user input query.
-        :param max_iterations: The maximum number of iterations to process tools.
-        :return: The LLM's response.
+        Get static system instructions.
+        
+        :return: List of system instruction messages.
         """
-        self._validate_input(user_input)
-        if not isinstance(max_iterations, int) or max_iterations <= 0:
-            raise ValueError("max_iterations must be a positive integer.")
-        
-        # Store user input in memory if available
-        if self._memory:
-            self._memory.add_message(user_input, "human")
-        
-        tool_results = []
-        for iteration in range(max_iterations):
-            # Get result from LLM
-            #print(f"\n--- {self.name} ---\n--- Iteration {iteration + 1} ---")  # Debugging purposes
-            prompt = self._structure_prompt(user_input, tool_results=tool_results)
-            #print(prompt)  # Debugging purposes
-            if tool_results: print(Tool.format_tool_calls_short(tool_results))  # Debugging purposes
-            result = self._llm.invoke(prompt, use_tools=True)
-            # print(f"🤖{self.name}: {result.content}")  # Print the llm's response
+        return self._instructions
 
-            # Store results in memory if available
-            if result.response_metadata and result.content:
-                if self._memory:
-                    self._memory.add_message(result.content, "ai")
 
-            # If no tool calls, return the final answer
-            if not result.additional_kwargs.get("tool_calls"):
-                return result
-            
-            # Print each tool call before calling them
-            #for tool_call in result.additional_kwargs["tool_calls"]:
-                #print(f"🛠️ Tool call: {tool_call['function']['name']}({tool_call['function']['arguments']})")  # Debugging purposes
-
-            # Process each tool call sequentially
-            for tool_call in result.additional_kwargs["tool_calls"]:
-                tool_result = Tool.process_tool_call(tool_call, self._tools)
-                if tool_result["type"] == "agent_response":
-                    tool_result["result"] = tool_result["result"].content
-                elif tool_result["type"] == "retriever_response":
-                    tool_result["result"] = Chroma_Wrapper.format_data(tool_result["result"])
-                tool_results.append(tool_result)
+    def _get_conversation_history(self) -> List[Dict[str, Any]]:
+        """
+        Get past conversation messages from memory.
         
-        # If max iterations reached, formulate a final response
-        #print(f"🤖{self.name}: Maximum iterations ({max_iterations}) reached, formulating final answer...")  # Debugging purposes
-        prompt = self._structure_prompt(user_input, tool_results=tool_results)
-        return self._llm.invoke(prompt, use_tools=False)
+        :return: List of user/assistant message pairs from conversation history.
+        """
+        return self._memory.retrieve_memory() if self._memory else []
     
 
-    def stream(self, user_input: str, max_iterations: int = 3) -> Any:
+    def _build_current_turn(self, user_input: str) -> Dict[str, str]:
         """
-        Processes user input, structures a prompt and streams the LLM.
+        Build current turn message with dynamic context and user query.
+        
+        Wraps user input with dynamic contextual information such as:
+        - Current datetime
+        - Future: Upcoming events, retrieved memories, etc.
+        
+        :param user_input: The user's query.
+        :return: Single user message dictionary with [CONTEXT] block and query.
+        """
+        query_parts = [
+            "[CONTEXT]",
+            f"Current datetime: {datetime.now().strftime('%A, %B %d, %Y at %H:%M')}",
+            "[/CONTEXT]",
+            "",
+            "Use the context above and any available tools to respond to the following:",
+            "",
+            user_input
+        ]
+        
+        return {
+            "role": "user",
+            "content": "\n".join(query_parts)
+        }
+
+
+    def build_prompt(self, user_input: str) -> List[Dict[str, str]]:
+        """
+        Build complete prompt by combining all message parts.
+        
+        Order optimized for prompt caching:
+        1. Static instructions (cacheable)
+        2. Conversation history (mostly cacheable)
+        3. Current turn with dynamic context (changes frequently)
+        
+        :param user_input: The user's query.
+        :return: Complete list of messages ready for LLM invocation.
+        """
+        return (
+            self._get_instructions() +
+            self._get_conversation_history() +
+            [self._build_current_turn(user_input)]
+        )
+
+
+    def _handle_tool_calls(self, tool_calls: List[Dict[str, Any]], ai_content: str) -> List[Dict[str, Any]]:
+        """Process tool calls and append results to current query."""
+        tool_messages = [{"role": "ai", "content": ai_content, "tool_calls": tool_calls}]
+        
+        for tool_call in tool_calls:
+            print(f"🛠️ {tool_call['function']['name']}({tool_call['function']['arguments']})")
+            tool_result = Tool.process_tool_call(tool_call, self._tools)
+            tool_messages.append({"role": "tool", "tool_call_id": tool_result["id"], "content": tool_result["result"]})
+
+        return tool_messages
+
+
+    def _save_conversation(self, user_input: str, ai_content: str) -> None:
+        """Save user input and AI response to memory."""
+        if self._memory:
+            self._memory.add_message(user_input, "human")
+            self._memory.add_message(ai_content, "ai")
+
+
+    def invoke(self, user_input: str, max_iterations: int = 3, is_streaming: bool = False) -> Any:
+        """
+        Invokes the agent to process user input.
+
+        :param user_input: The user input query.
+        :param max_iterations: The maximum number of iterations to process tools.
+        :param is_streaming: Whether to stream the response or not.
+        :return: The LLM's response or a generator yielding streamed responses.
+        """
+        # Validate inputs
+        self._validate_input(user_input)
+        if not isinstance(max_iterations, int) or max_iterations <= 0:
+            raise ValueError("max_iterations must be a positive integer.")
+        
+        # Route to appropriate implementation based on streaming flag
+        if is_streaming:
+            return self._stream(user_input, max_iterations)
+        else:
+            return self._invoke(user_input, max_iterations)
+    
+
+    def _invoke(self, user_input: str, max_iterations: int = 3) -> AIMessage:
+        """
+        Invokes the agent to process user input (non-streaming).
 
         :param user_input: The user input query.
         :param max_iterations: The maximum number of iterations to process tools.
         :return: The LLM's response.
         """
-        self._validate_input(user_input)
-        if not isinstance(max_iterations, int) or max_iterations <= 0:
-            raise ValueError("max_iterations must be a positive integer.")
         
-        # Store user input in memory if available
-        if self._memory:
-            self._memory.add_message(user_input, "human")
+        prompt_messages = self.build_prompt(user_input)
 
-        def update_stage(token: Response, stage: str, tool: Optional[str] = None) -> Response:
-            """Helper function to update stage information on tokens"""
-            token.stage = stage
-            token.tool_name = tool
-            return token
-
-        # Start with orchestrator stage
-        yield update_stage(Response(""), self.STAGE_ORCHESTRATOR)
-
-        tool_results = []
         for iteration in range(max_iterations):
-            # Get result generator from LLM
-            #print(f"\n--- {self.name} ---\n--- Iteration {iteration + 1} ---")  # Debugging purposes
-            prompt = self._structure_prompt(user_input, tool_results=tool_results)
-            #print(prompt)  # Debugging purposes
-            if tool_results: print(Tool.format_tool_calls_short(tool_results))  # Debugging purposes
-            result_generator = self._llm.stream(prompt, use_tools=True)
+            is_last_iteration = (iteration == max_iterations - 1)
+            
+            result = self._llm.invoke(prompt_messages, use_tools=not is_last_iteration)
 
-            # Stream the result token by token and collect tool calls
-            result = None
-            for token in Tool.collect_tool_calls_from_stream(result_generator):
-                yield update_stage(token, self.STAGE_THINKING)
-                result = token
+            # Convert content to string if it's a list
+            content_str = result.content if isinstance(result.content, str) else str(result.content)
 
-            # Store intermediate results in memory if available
-            if result.response_metadata and result.response_metadata["final_response"]:
-                if self._memory:
-                    self._memory.add_message(result.response_metadata["final_response"], "ai")
-
-            # If no tool calls, return the final answer
-            if not result.additional_kwargs.get("tool_calls"):
-                yield update_stage(result, self.STAGE_CONTENT)
+            if result.additional_kwargs.get("tool_calls"):
+                prompt_messages.extend(self._handle_tool_calls(tool_calls=result.additional_kwargs["tool_calls"], ai_content=content_str))
+            else:
+                self._save_conversation(user_input, ai_content=content_str)
                 return result
-            
-            # Print each tool call before calling them
-            #for tool_call in result.additional_kwargs["tool_calls"]:
-                #print(f"🛠️ Tool call: {tool_call['function']['name']}({tool_call['function']['arguments']})")  # Debugging purposes
-            
-            # Process each tool call sequentially
-            for tool_call in result.additional_kwargs["tool_calls"]:
-                # Enter tool stage for this specific tool
-                tool_name = tool_call['function']['name']
-                yield update_stage(Response(""), self.STAGE_TOOL, tool_name)
-                
-                tool_result = Tool.process_tool_call(tool_call, self._tools)
-                #print(f"🛠️ Tool result: {tool_result}")  # Debugging purposes
-                # Format the tool result based on its type
-                if tool_result["type"] == "agent_response":
-                    tool_result["result"] = tool_result["result"].content
-                elif tool_result["type"] == "retriever_response":
-                    tool_result["result"] = Chroma_Wrapper.format_data(tool_result["result"])
-                tool_results.append(tool_result)
         
-        # If max iterations reached, formulate a final response
-        #print(f"🤖{self.name}: Maximum iterations ({max_iterations}) reached, formulating final answer...")  # Debugging purposes
-        prompt = self._structure_prompt(user_input, tool_results=tool_results)
-        for token in self._llm.stream(prompt, use_tools=False):
-            yield update_stage(token, self.STAGE_CONTENT)
+        # If we've exhausted iterations, return the last result
+        raise RuntimeError("Max iterations reached without a final response")
+    
+
+    def _stream(self, user_input: str, max_iterations: int = 3) -> Generator[AIMessage, None, None]:
+        """
+        Invokes the agent to process user input (streaming).
+
+        :param user_input: The user input query.
+        :param max_iterations: The maximum number of iterations to process tools.
+        :return: A generator yielding streamed responses.
+        """
+
+        prompt_messages = self.build_prompt(user_input)
+
+        for iteration in range(max_iterations):
+            is_last_iteration = (iteration == max_iterations - 1)
+            
+            result_generator = self._llm.stream(prompt_messages, use_tools=not is_last_iteration)
+            result: Optional[AIMessage] = None
+            content = ""
+            
+            # Collect result while streaming
+            for token in Tool.collect_tool_calls_from_stream(result_generator):
+                content += token.content
+                yield token
+                result = token
+            
+            # Convert content to string if it's a list
+            content_str = content if isinstance(content, str) else str(content)
+
+            if result and result.additional_kwargs.get("tool_calls"):
+                prompt_messages.extend(self._handle_tool_calls(tool_calls=result.additional_kwargs["tool_calls"], ai_content=content_str))
+            else:
+                self._save_conversation(user_input, ai_content=content_str)
+                return
