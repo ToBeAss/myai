@@ -191,6 +191,12 @@
             "timestamp": "29.11.2025 23:52",
             "type": "preference",
             "content": "Tobias likes the red wine 19 Crimes. Alternative wines with a similar bold, fruity, easy-drinking style include Portuguese blends like Porta 6 Tinto, and Laithwaites Black Stump, which offers a full-bodied taste in the same dark fruity vein. Generally, wines that have rich blackberry and black cherry notes with approachable profiles should suit Tobias."
+        },
+        {
+            "id": 33,
+            "timestamp": "20.12.2025 19:17",
+            "type": "project",
+            "content": "Tobias has decided to use GPT-4.1 nano as the standard model for quick interactions, with an escalation system to switch to GPT-4.1 mini or full for more complex tasks. This approach balances responsiveness and capability, optimizing performance for voice assistant use cases."
         }
     ]
 }

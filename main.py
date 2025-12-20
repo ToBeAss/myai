@@ -29,7 +29,7 @@ from myai.tools import (
 prompts = load_prompts()
 
 # Initialize the agent with loaded configuration
-llm = LLM_Wrapper(model_name="openai-gpt-4.1-mini")
+llm = LLM_Wrapper(model_name="openai-gpt-4.1-nano")
 memory = Memory()
 myai = Agent(llm=llm, memory=memory, agent_name=prompts['name'], description=prompts['description'])
 

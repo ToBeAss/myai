@@ -183,12 +183,13 @@ class Agent:
         :param user_input: The user's query.
         :return: Complete list of messages ready for LLM invocation.
         """
-        return (
+        prompt = (
             self._get_instructions() +
             self._get_conversation_history() +
             [self._build_current_turn(user_input)]
         )
-
+        #print(f"----- Prompt Build -----\n{prompt}\n----- End Prompt Build -----")  # Debugging output
+        return prompt
 
     def _handle_tool_calls(self, tool_calls: List[Dict[str, Any]], ai_content: str) -> List[Dict[str, Any]]:
         """Process tool calls and append results to current query."""
