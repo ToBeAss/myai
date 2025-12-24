@@ -25,3 +25,22 @@ The system provides a graphical interface to set more complex functions. You nee
 sudo alsamixer
 ```
 The default volume is relatively low; it can be adjusted up to around 70, beyond which it will cause distortion.
+
+## Install PiSugar Power Manager
+```bash
+wget https://cdn.pisugar.com/release/pisugar-power-manager.sh
+bash pisugar-power-manager.sh -v 1.7.7
+```
+>[!WARNING]
+>Do NOT install 2.x.x versions — they are incompatible with Pi Zero (ARMv6).
+
+Verify Battery & Model
+```bash
+echo "get battery" | nc 127.0.0.1 8423
+echo "get model"   | nc 127.0.0.1 8423
+```
+
+Lock the working version (ciritical)
+```
+sudo apt-mark hold pisugar-server pisugar-poweroff
+```
