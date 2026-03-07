@@ -1,0 +1,120 @@
+"""Text chunk-boundary heuristics for streaming TTS."""
+
+from __future__ import annotations
+
+import re
+
+
+def is_sentence_boundary(text: str, position: int) -> bool:
+    """Check whether punctuation at position is a true sentence boundary."""
+    if position < 0 or position >= len(text):
+        return False
+
+    before = text[:position]
+    after = text[position + 1:] if position + 1 < len(text) else ""
+
+    # Decimal handling: avoid splitting "3.14" and streaming "3." then "14"
+    if position > 0 and text[position - 1].isdigit():
+        if after and after[0].isdigit():
+            return False
+        if re.match(r"^\s*\d", after):
+            return False
+        if not after:
+            return False
+
+    # Initials such as "J. T" should stay connected.
+    if position > 0 and text[position - 1].isupper() and text[position - 1].isalpha():
+        if position == 1 or not text[position - 2].isalnum():
+            if after and after[0].isupper():
+                return False
+            if after and len(after) >= 2 and after[0].isspace() and after[1].isupper():
+                return False
+            if not after or after.isspace():
+                return False
+
+    if not after:
+        return True
+
+    text_with_period = text[:position + 1]
+    common_abbrevs = [
+        r"\bDr\.$", r"\bMr\.$", r"\bMrs\.$", r"\bMs\.$",
+        r"\bJr\.$", r"\bSr\.$", r"\bProf\.$", r"\bGen\.$",
+        r"\bCol\.$", r"\bCapt\.$", r"\bLt\.$", r"\bSgt\.$",
+        r"\bRev\.$", r"\bHon\.$", r"\bSt\.$", r"\bAve\.$",
+        r"\bDept\.$", r"\bUniv\.$", r"\bInc\.$", r"\bLtd\.$",
+        r"\bCo\.$", r"\bCorp\.$", r"\betc\.$", r"\bvs\.$",
+        r"\be\.g\.$", r"\bi\.e\.$", r"\bviz\.$", r"\bal\.$",
+        r"\bU\.S\.$", r"\bU\.K\.$", r"\bD\.C\.$",
+    ]
+    for abbrev_pattern in common_abbrevs:
+        if re.search(abbrev_pattern, text_with_period, re.IGNORECASE):
+            return False
+
+    if re.match(r"^(\s+)([a-z])", after):
+        return False
+
+    if before.endswith("..") or after.startswith(".."):
+        return False
+
+    if after and (after[0].isupper() or (after[0] == " " and len(after) > 1 and after[1].isupper())):
+        return True
+
+    return bool(re.match(r"^\s+[A-Z]", after))
+
+
+def is_weak_comma(text: str, position: int) -> bool:
+    """Return True for commas that should not trigger chunking."""
+    before = text[:position].strip().lower()
+    after = text[position + 1:].strip()
+
+    if after and re.match(r"^\s*\d", after):
+        return True
+
+    if position == 0 or (position > 0 and text[position - 1] == ","):
+        return True
+
+    before_words = before.split()
+    if before_words:
+        last_word = before_words[-1].lower()
+        if last_word in ["and", "but", "or", "so", "yet", "nor"]:
+            return True
+
+    after_words = after.split()
+    if after_words:
+        first_word = after_words[0]
+        if first_word[0].isupper() or first_word.lower() in ["sir", "ma'am", "miss", "mr", "mrs", "ms", "dr"]:
+            return True
+
+    prev_comma = text[:position].rfind(",")
+    if prev_comma == -1:
+        prev_comma = 0
+    phrase_length = position - prev_comma
+    if phrase_length < 15:
+        return True
+
+    return False
+
+
+def find_sentence_boundary(text: str, chunk_chars: str = ".!?") -> int:
+    """Find the last valid boundary index in text, or -1 if none found."""
+    last_valid_boundary = -1
+
+    for i, char in enumerate(text):
+        if char not in chunk_chars:
+            continue
+
+        if char == ".":
+            if is_sentence_boundary(text, i):
+                last_valid_boundary = i
+        elif char == ",":
+            if not is_weak_comma(text, i):
+                last_valid_boundary = i
+        elif char == "—":
+            if i > 0 and (i + 1 >= len(text) or text[i + 1] != "—"):
+                last_valid_boundary = i
+        else:
+            if i > 0 and text[i - 1] in "!?":
+                continue
+            last_valid_boundary = i
+
+    return last_valid_boundary

@@ -10,8 +10,8 @@ from datetime import datetime
 from pathlib import Path
 import threading
 import queue
-import re
 from myai.paths import data_file
+from .chunking import find_sentence_boundary, is_sentence_boundary, is_weak_comma
 
 class TextToSpeech:
     """Text-to-speech handler using Google Cloud TTS with usage tracking."""
@@ -143,179 +143,16 @@ class TextToSpeech:
         return 'standard'
     
     def _is_sentence_boundary(self, text: str, position: int) -> bool:
-        """
-        Check if a period at the given position is a true sentence boundary.
-        Handles common abbreviations and edge cases.
-        
-        :param text: The full text
-        :param position: Position of the period to check
-        :return: True if it's a sentence boundary, False otherwise
-        """
-        if position < 0 or position >= len(text):
-            return False
-        
-        # Get context around the period
-        before = text[:position]
-        after = text[position + 1:] if position + 1 < len(text) else ""
-        
-        # Check for numbers with decimals FIRST (e.g., "3.14" or "3. 14")
-        # This handles both "3.14" and streaming case "3." followed later by "14"
-        # MUST check before the "empty after" check because in streaming "3." has empty after
-        # Check if character before the period is a digit
-        if position > 0 and text[position - 1].isdigit():
-            # Check if next is digit (handles "3.14")
-            if after and after[0].isdigit():
-                return False
-            # Check if next is space then digit (handles streaming "3. 14")
-            if re.match(r'^\s*\d', after):
-                return False
-            # In streaming, if we have "3." with nothing after, DON'T treat as boundary yet
-            # This prevents chunking "3." before the decimal digits arrive
-            if not after:
-                return False
-        
-        # Check for common abbreviations (single letter + period)
-        # e.g., "J.", "M.", etc. - check character BEFORE the period
-        if position > 0 and text[position - 1].isupper() and text[position - 1].isalpha():
-            # Check if there's a word boundary before the letter (space or start of string)
-            if position == 1 or not text[position - 2].isalnum():
-                # Check if next character is uppercase (likely part of name like "J. Trump")
-                if after and after[0].isupper():
-                    return False
-                # Check if it's space + uppercase (streaming case: "J. T" when "Trump" hasn't arrived yet)
-                if after and len(after) >= 2 and after[0].isspace() and after[1].isupper():
-                    return False
-                # In streaming, we might get "J." with nothing after yet
-                # If after is empty or only whitespace, be cautious - don't chunk yet
-                if not after or after.isspace():
-                    return False
-        
-        # If nothing comes after, it's a sentence end
-        if not after:
-            return True
-        
-        # Common titles and abbreviations
-        # Check the text UP TO AND INCLUDING this period
-        text_with_period = text[:position + 1]
-        common_abbrevs = [
-            r'\bDr\.$', r'\bMr\.$', r'\bMrs\.$', r'\bMs\.$',
-            r'\bJr\.$', r'\bSr\.$', r'\bProf\.$', r'\bGen\.$',
-            r'\bCol\.$', r'\bCapt\.$', r'\bLt\.$', r'\bSgt\.$',
-            r'\bRev\.$', r'\bHon\.$', r'\bSt\.$', r'\bAve\.$',
-            r'\bDept\.$', r'\bUniv\.$', r'\bInc\.$', r'\bLtd\.$',
-            r'\bCo\.$', r'\bCorp\.$', r'\betc\.$', r'\bvs\.$',
-            r'\be\.g\.$', r'\bi\.e\.$', r'\bviz\.$', r'\bal\.$',
-            r'\bU\.S\.$', r'\bU\.K\.$', r'\bD\.C\.$'
-        ]
-        
-        for abbrev_pattern in common_abbrevs:
-            if re.search(abbrev_pattern, text_with_period, re.IGNORECASE):
-                return False
-        
-        # Check if next word starts with lowercase (likely continuation)
-        next_word_match = re.match(r'^(\s+)([a-z])', after)
-        if next_word_match:
-            return False
-        
-        # Check for ellipsis patterns
-        if before.endswith('..') or after.startswith('..'):
-            return False
-        
-        # If we made it here and next character is uppercase or space+uppercase, 
-        # it's likely a sentence boundary
-        if after and (after[0].isupper() or (after[0] == ' ' and len(after) > 1 and after[1].isupper())):
-            return True
-        
-        # Default: treat as sentence boundary if followed by space and not obviously wrong
-        return bool(re.match(r'^\s+[A-Z]', after))
+        """Compatibility wrapper around chunk-boundary helper logic."""
+        return is_sentence_boundary(text, position)
     
     def _is_weak_comma(self, text: str, position: int) -> bool:
-        """
-        Check if a comma at the given position is a 'weak' comma that shouldn't chunk.
-        Weak commas are those that should stay connected for natural speech flow.
-        
-        :param text: The full text
-        :param position: Position of the comma
-        :return: True if it's a weak comma (skip chunking), False otherwise
-        """
-        # Get text before and after the comma
-        before = text[:position].strip().lower()
-        after = text[position+1:].strip()
-        
-        # Skip if comma is in numbers (e.g., "1,000")
-        if after and re.match(r'^\s*\d', after):
-            return True
-        
-        # Skip multiple commas or comma at start
-        if position == 0 or (position > 0 and text[position-1] == ','):
-            return True
-        
-        # Get the last few words before the comma
-        before_words = before.split()
-        if len(before_words) > 0:
-            last_word = before_words[-1].lower()
-            
-            # Skip commas after conjunctions (should flow together)
-            if last_word in ['and', 'but', 'or', 'so', 'yet', 'nor']:
-                return True
-        
-        # Get the first few words after the comma
-        after_words = after.split()
-        if len(after_words) > 0:
-            first_word = after_words[0]
-            
-            # Skip commas before common names/titles (vocative commas)
-            # This catches patterns like "..., Tobias" or "..., sir"
-            # Check if first word is capitalized (likely a name) or a title
-            if first_word[0].isupper() or first_word.lower() in ['sir', 'ma\'am', 'miss', 'mr', 'mrs', 'ms', 'dr']:
-                return True
-        
-        # Check for short phrases between commas (less than 15 chars)
-        # Find previous comma or start
-        prev_comma = text[:position].rfind(',')
-        if prev_comma == -1:
-            prev_comma = 0
-        phrase_length = position - prev_comma
-        if phrase_length < 15:
-            return True
-        
-        return False
+        """Compatibility wrapper around chunk-boundary helper logic."""
+        return is_weak_comma(text, position)
     
     def _find_sentence_boundary(self, text: str, chunk_chars: str = ".!?") -> int:
-        """
-        Find the position of the last valid sentence boundary in text.
-        
-        :param text: Text to search
-        :param chunk_chars: Characters that could indicate sentence boundaries
-        :return: Position of last sentence boundary, or -1 if none found
-        """
-        last_valid_boundary = -1
-        
-        # Find all potential boundaries
-        for i, char in enumerate(text):
-            if char in chunk_chars:
-                # For periods, check if it's a real sentence boundary
-                if char == '.':
-                    if self._is_sentence_boundary(text, i):
-                        last_valid_boundary = i
-                elif char == ',':
-                    # Commas are natural pause points, but be selective
-                    if not self._is_weak_comma(text, i):
-                        last_valid_boundary = i
-                elif char == '—':
-                    # Em dash is a natural pause point (stronger than comma)
-                    # Make sure it's not a regular hyphen by checking it's the em dash character
-                    # Skip if it's at the start or followed by another em dash
-                    if i > 0 and (i + 1 >= len(text) or text[i + 1] != '—'):
-                        last_valid_boundary = i
-                else:
-                    # ! and ? are almost always sentence boundaries
-                    # But check for emoticons and multiple punctuation
-                    if i > 0 and text[i-1] in '!?':
-                        continue  # Skip repeated punctuation
-                    last_valid_boundary = i
-        
-        return last_valid_boundary
+        """Compatibility wrapper around chunk-boundary helper logic."""
+        return find_sentence_boundary(text, chunk_chars)
     
     def _load_usage(self) -> dict:
         """Load usage data from file."""
