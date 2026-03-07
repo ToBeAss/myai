@@ -19,6 +19,7 @@ from myai.paths import unique_tmp_audio_file, TMP_AUDIO_DIR, REPO_ROOT
 from . import conversation_state
 from .audio_io import STTAudioIO
 from .chunked_processing import ChunkedSpeechProcessor
+from .speech_chunk_processing import SpeechChunkProcessor
 from .wakeword_metrics import WakeWordMetrics
 from .wakeword_scoring import WakeWordScorer
 
@@ -99,6 +100,7 @@ class SpeechToText:
             self.wakeword_scorer = WakeWordScorer(self.wake_words)
             self.audio_io = STTAudioIO(self)
             self.chunked_processor = ChunkedSpeechProcessor(self)
+            self.speech_chunk_processor = SpeechChunkProcessor(self)
             self.is_listening = False
             self.wake_callback = None
             self.in_conversation = False
@@ -131,7 +133,7 @@ class SpeechToText:
             # Initialize metrics tracking
             self.track_metrics = track_metrics
             self.metrics: Optional[WakeWordMetrics] = WakeWordMetrics() if track_metrics else None
-            self.last_activation_time = 0
+            self.last_activation_time = 0.0
             self.waiting_for_engagement = False
             
             # Initialize WebRTC Voice Activity Detection
@@ -706,148 +708,7 @@ class SpeechToText:
 
     def _process_speech_chunk(self, speech_frames):
         """Process a chunk of speech to check for wake words."""
-        temp_filename: Optional[Path] = None
-        try:
-            # Note: speech_being_processed is already set to True when speech was first detected
-            # Note: update_conversation_activity() was already called when speech was first detected
-            
-            # Create temporary audio file
-            temp_filename = unique_tmp_audio_file("wake_audio")
-            
-            # Save audio frames to file
-            with wave.open(str(temp_filename), 'wb') as wf:
-                wf.setnchannels(self.channels)
-                wf.setsampwidth(pyaudio.PyAudio().get_sample_size(self.audio_format))
-                wf.setframerate(self.rate)
-                wf.writeframes(b''.join(speech_frames))
-            
-            # Transcribe the audio (English only)
-            audio_data = self.load_audio_data(str(temp_filename))
-            
-            # Handle both faster-whisper and standard whisper
-            if self.using_faster_whisper:
-                segments, info = self.model.transcribe(audio_data, language="en", initial_prompt=self.vocabulary_hints)
-                transcribed_text = " ".join([segment.text for segment in segments]).strip().lower()
-            else:
-                result = self.model.transcribe(audio_data, language="en", initial_prompt=self.vocabulary_hints)
-                transcribed_text = result["text"].strip().lower()
-            
-            # Check for hallucinations early to avoid processing noise
-            if self.is_hallucination(transcribed_text):
-                print("⚠️ Transcription appears to be a hallucination from background noise, ignoring...")
-                # If we're in conversation mode, exit it since this is just noise
-                if self.in_conversation:
-                    self.exit_conversation_mode()
-                return
-            
-            # If we're in conversation mode, treat any speech as a command
-            if self.in_conversation:
-                print(f"💬 Follow-up detected: '{transcribed_text}'")
-                if transcribed_text and self.wake_callback:
-                    # Mark engagement for previous activation
-                    if self.track_metrics and self.waiting_for_engagement:
-                        self.metrics.log_outcome(engaged=True)
-                        self.waiting_for_engagement = False
-                    self.wake_callback(transcribed_text)
-                return
-            
-            # Use flexible wake word detection if enabled
-            if self.flexible_wake_word:
-                # Extract command with confidence scoring
-                command, confidence, position = self.extract_command_with_confidence(
-                    transcribed_text, 
-                    self.wake_words
-                )
-                
-                if command is None:
-                    # No wake word found
-                    if len(transcribed_text) > 3:
-                        print(f"🔇 Speech without wake word ignored: '{transcribed_text[:30]}{'...' if len(transcribed_text) > 30 else ''}'")
-                        if self.track_metrics:
-                            self.metrics.log_true_negative()
-                    return
-                
-                # Wake word found - check confidence
-                print(f"🎯 Wake word detected at position {position}")
-                print(f"📝 Full transcription: '{transcribed_text}'")
-                print(f"📊 Confidence score: {confidence}/100")
-                
-                # Log activation
-                if self.track_metrics:
-                    self.metrics.log_activation(transcribed_text, confidence, position)
-                    self.last_activation_time = time.time()
-                    self.waiting_for_engagement = True
-                
-                # Determine action based on confidence
-                if confidence >= self.confidence_threshold:
-                    # Accept activation
-                    if confidence >= 80:
-                        print(f"✅ HIGH confidence - Processing command")
-                    elif confidence >= 60:
-                        print(f"⚠️  MEDIUM confidence - Processing command")
-                    else:
-                        print(f"❓ LOW confidence - Processing with caution")
-                    
-                    if self.wake_callback:
-                        # Mark this activation as True Positive since we're processing it
-                        if self.track_metrics and self.waiting_for_engagement:
-                            self.metrics.log_outcome(engaged=True)
-                            self.waiting_for_engagement = False
-                        self.wake_callback(command)
-                else:
-                    # Reject activation
-                    print(f"🚫 Confidence too low ({confidence} < {self.confidence_threshold}) - Ignoring")
-                    if self.track_metrics:
-                        self.metrics.log_true_negative()
-                        self.waiting_for_engagement = False
-            
-            else:
-                # Original wake word detection (for backward compatibility)
-                wake_word_found = False
-                for wake_word in self.wake_words:
-                    if wake_word in transcribed_text:
-                        print(f"🎯 Wake word detected: '{wake_word}'")
-                        print(f"📝 Full transcription: '{transcribed_text}'")
-                        wake_word_found = True
-                        
-                        # Extract the part after the wake word
-                        wake_index = transcribed_text.find(wake_word)
-                        command_text = transcribed_text[wake_index + len(wake_word):].strip()
-                        
-                        if command_text:
-                            if self.wake_callback:
-                                self.wake_callback(command_text)
-                        else:
-                            # Just wake word, no command
-                            if self.wake_callback:
-                                self.wake_callback("")
-                        break
-                
-                # If no wake word found but we have meaningful speech, ignore it
-                if not wake_word_found and len(transcribed_text) > 3:
-                    print(f"🔇 Speech without wake word ignored: '{transcribed_text[:30]}{'...' if len(transcribed_text) > 30 else ''}'")
-                    pass
-                
-        except Exception as e:
-            print(f"❌ Error processing speech chunk: {e}")
-        
-        finally:
-            # Clean up - always try to remove the file BEFORE marking processing complete
-            if temp_filename:
-                for attempt in range(3):  # Try up to 3 times
-                    try:
-                        if temp_filename.exists():
-                            time.sleep(0.1)  # Small delay
-                            temp_filename.unlink()
-                            break
-                    except Exception as cleanup_error:
-                        if attempt == 2:  # Last attempt
-                            print(f"⚠️ Could not clean up wake audio file after 3 attempts: {cleanup_error}")
-                        else:
-                            time.sleep(0.2)  # Wait before retry
-            
-            # Mark that speech processing is complete (do this LAST)
-            self.speech_being_processed = False
+        return self.speech_chunk_processor.process_speech_chunk(speech_frames)
 
     def start_conversation_timer(self):
         """Start a simple conversation timer that pauses while speech is processed."""
