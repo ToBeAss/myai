@@ -5,13 +5,12 @@ import tempfile
 import pygame
 from typing import Optional, Union
 import time
-import json
-from datetime import datetime
 from pathlib import Path
 import threading
 import queue
 from myai.paths import data_file
 from .chunking import find_sentence_boundary, is_sentence_boundary, is_weak_comma
+from .usage_tracker import TTSUsageTracker
 
 class TextToSpeech:
     """Text-to-speech handler using Google Cloud TTS with usage tracking."""
@@ -100,6 +99,7 @@ class TextToSpeech:
             self.enforce_free_tier = enforce_free_tier
             self.usage_file = Path(usage_file) if usage_file else data_file("tts_usage.json")
             self.using_fallback = False  # Track if we're currently using fallback
+            self._usage_tracker = TTSUsageTracker(self.usage_file, self.VOICE_TIERS)
             
             # Determine voice tiers
             self.voice_tier = self._determine_voice_tier(voice_name)
@@ -156,201 +156,79 @@ class TextToSpeech:
     
     def _load_usage(self) -> dict:
         """Load usage data from file."""
-        if os.path.exists(self.usage_file):
-            try:
-                with open(self.usage_file, 'r') as f:
-                    data = json.load(f)
-                    # Check if we need to reset for new month
-                    if data.get('month') != datetime.now().strftime('%Y-%m'):
-                        return self._create_new_usage_data()
-                    return data
-            except Exception as e:
-                print(f"⚠️  Could not load usage data: {e}. Creating new file.")
-        return self._create_new_usage_data()
+        return self._usage_tracker.load_usage()
     
     def _create_new_usage_data(self) -> dict:
         """Create fresh usage data structure."""
-        return {
-            'month': datetime.now().strftime('%Y-%m'),
-            'tiers': {tier: 0 for tier in self.VOICE_TIERS.keys()},
-            'total_requests': 0,
-            'last_updated': datetime.now().isoformat()
-        }
+        return self._usage_tracker.create_new_usage_data()
     
     def _save_usage(self):
         """Save usage data to file."""
-        try:
-            self.usage_data['last_updated'] = datetime.now().isoformat()
-            with open(self.usage_file, 'w') as f:
-                json.dump(self.usage_data, f, indent=2)
-        except Exception as e:
-            print(f"⚠️  Could not save usage data: {e}")
+        self._usage_tracker.save_usage(self.usage_data)
     
     def _update_usage(self, char_count: int):
         """Update usage statistics."""
-        # Update usage for the currently active voice tier
-        active_tier = self._determine_voice_tier(self.voice_name)
-        self.usage_data['tiers'][active_tier] += char_count
-        self.usage_data['total_requests'] += 1
-        self._save_usage()
+        self.usage_data = self._usage_tracker.update_usage(
+            usage_data=self.usage_data,
+            voice_name=self.voice_name,
+            determine_voice_tier=self._determine_voice_tier,
+            char_count=char_count,
+        )
     
     def _check_and_switch_voice(self) -> bool:
-        """
-        Check if we should switch between primary and fallback voice.
-        Returns True if voice was switched.
-        """
-        if not self.fallback_voice:
-            return False
-        
-        # Check if it's a new month - if so, switch back to primary
-        if self.using_fallback and self.usage_data.get('month') == datetime.now().strftime('%Y-%m'):
-            # New month detected, check if primary voice has quota
-            primary_usage = self.usage_data['tiers'][self.voice_tier]
-            primary_limit = self.VOICE_TIERS[self.voice_tier]['free_chars']
-            
-            if primary_usage == 0:  # Fresh month, switch back to primary
-                self.voice_name = self.primary_voice_name
-                self.using_fallback = False
-                print(f"🔄 New month detected! Switched back to primary voice: {self.primary_voice_name}")
-                return True
-        
-        # Check if primary voice is exhausted and we should use fallback
-        if not self.using_fallback:
-            primary_usage = self.usage_data['tiers'][self.voice_tier]
-            primary_limit = self.VOICE_TIERS[self.voice_tier]['free_chars']
-            
-            # If primary is at or near limit, switch to fallback
-            if primary_usage >= primary_limit * 0.99:  # 99% threshold
-                fallback_usage = self.usage_data['tiers'][self.fallback_tier]
-                fallback_limit = self.VOICE_TIERS[self.fallback_tier]['free_chars']
-                
-                if fallback_usage < fallback_limit:
-                    self.voice_name = self.fallback_voice
-                    self.using_fallback = True
-                    print(f"🔄 Primary voice quota exhausted. Switching to fallback: {self.fallback_voice}")
-                    return True
-        
-        return False
+        """Check if we should switch between primary and fallback voice."""
+        switched, voice_name, using_fallback = self._usage_tracker.check_and_switch_voice(
+            usage_data=self.usage_data,
+            voice_name=self.voice_name,
+            using_fallback=self.using_fallback,
+            primary_voice_name=self.primary_voice_name,
+            voice_tier=self.voice_tier,
+            fallback_voice=self.fallback_voice,
+            fallback_tier=self.fallback_tier,
+        )
+        self.voice_name = voice_name
+        self.using_fallback = using_fallback
+        return switched
     
     def _check_quota(self, text: str) -> tuple[bool, str]:
-        """
-        Check if the request would exceed free tier quota.
-        Automatically switches to fallback if available and primary is exhausted.
-        
-        :param text: Text to synthesize
-        :return: Tuple of (allowed: bool, message: str)
-        """
-        if not self.enforce_free_tier:
-            return True, ""
-        
-        char_count = len(text)
-        active_tier = self._determine_voice_tier(self.voice_name)
-        current_usage = self.usage_data['tiers'][active_tier]
-        free_limit = self.VOICE_TIERS[active_tier]['free_chars']
-        
-        if current_usage + char_count > free_limit:
-            # Try to switch to fallback voice if available
-            if self.fallback_voice and not self.using_fallback:
-                fallback_tier = self._determine_voice_tier(self.fallback_voice)
-                fallback_usage = self.usage_data['tiers'][fallback_tier]
-                fallback_limit = self.VOICE_TIERS[fallback_tier]['free_chars']
-                
-                if fallback_usage + char_count <= fallback_limit:
-                    # Switch to fallback
-                    self.voice_name = self.fallback_voice
-                    self.using_fallback = True
-                    print(f"\n🔄 Primary voice quota exhausted. Automatically switching to fallback: {self.fallback_voice}")
-                    print(f"   Primary ({self.voice_tier.upper()}): {current_usage:,}/{free_limit:,} used")
-                    print(f"   Fallback ({fallback_tier.upper()}): {fallback_usage:,}/{fallback_limit:,} used\n")
-                    return True, ""
-            
-            # No fallback available or fallback also exhausted
-            remaining = free_limit - current_usage
-            fallback_info = ""
-            if self.fallback_voice:
-                fallback_tier = self._determine_voice_tier(self.fallback_voice)
-                fallback_usage = self.usage_data['tiers'][fallback_tier]
-                fallback_limit = self.VOICE_TIERS[fallback_tier]['free_chars']
-                fallback_info = f"   Fallback ({fallback_tier.upper()}): {fallback_usage:,}/{fallback_limit:,} used\n"
-            
-            message = (
-                f"❌ FREE TIER LIMIT EXCEEDED!\n"
-                f"   Active Voice: {self.voice_name}\n"
-                f"   Voice Tier: {active_tier.upper()}\n"
-                f"   This request: {char_count:,} characters\n"
-                f"   Current usage: {current_usage:,}/{free_limit:,} characters\n"
-                f"   Remaining: {remaining:,} characters\n"
-                f"{fallback_info}"
-                f"   To continue using TTS, either:\n"
-                f"   1. Wait until next month (resets on 1st)\n"
-                f"   2. Switch to a different voice with available quota\n"
-                f"   3. Set enforce_free_tier=False (will incur charges)\n"
-            )
-            return False, message
-        
-        return True, ""
+        """Check if the request would exceed free tier quota."""
+        allowed, message, voice_name, using_fallback = self._usage_tracker.check_quota(
+            text=text,
+            enforce_free_tier=self.enforce_free_tier,
+            usage_data=self.usage_data,
+            voice_name=self.voice_name,
+            using_fallback=self.using_fallback,
+            fallback_voice=self.fallback_voice,
+            voice_tier=self.voice_tier,
+            fallback_tier=self.fallback_tier,
+            determine_voice_tier=self._determine_voice_tier,
+        )
+        self.voice_name = voice_name
+        self.using_fallback = using_fallback
+        return allowed, message
     
     def _print_usage_stats(self):
         """Print current usage statistics."""
-        print(f"📊 Monthly Usage ({self.usage_data['month']}):")
-        
-        # Show primary voice stats
-        primary_usage = self.usage_data['tiers'][self.voice_tier]
-        primary_limit = self.VOICE_TIERS[self.voice_tier]['free_chars']
-        primary_percentage = (primary_usage / primary_limit) * 100
-        primary_remaining = primary_limit - primary_usage
-        
-        active_marker = "🎤" if not self.using_fallback else "💤"
-        print(f"   {active_marker} Primary ({self.voice_tier.upper()}): {primary_usage:,}/{primary_limit:,} chars ({primary_percentage:.1f}%)")
-        
-        # Show fallback voice stats if configured
-        if self.fallback_voice and self.fallback_tier:
-            fallback_usage = self.usage_data['tiers'][self.fallback_tier]
-            fallback_limit = self.VOICE_TIERS[self.fallback_tier]['free_chars']
-            fallback_percentage = (fallback_usage / fallback_limit) * 100
-            
-            active_marker = "🎤" if self.using_fallback else "💤"
-            print(f"   {active_marker} Fallback ({self.fallback_tier.upper()}): {fallback_usage:,}/{fallback_limit:,} chars ({fallback_percentage:.1f}%)")
-        
-        # Show status of active voice
-        if self.using_fallback:
-            print(f"   ℹ️  Currently using: FALLBACK voice")
-        else:
-            print(f"   ℹ️  Currently using: PRIMARY voice")
-            if primary_percentage > 80:
-                print(f"   ⚠️  WARNING: Primary voice approaching limit! Will auto-switch to fallback.")
-        
-        if self.enforce_free_tier:
-            print(f"   🛡️  Free tier protection: ENABLED")
-        else:
-            print(f"   ⚠️  Free tier protection: DISABLED (charges may apply)")
+        self._usage_tracker.print_usage_stats(
+            usage_data=self.usage_data,
+            using_fallback=self.using_fallback,
+            voice_tier=self.voice_tier,
+            fallback_voice=self.fallback_voice,
+            fallback_tier=self.fallback_tier,
+            enforce_free_tier=self.enforce_free_tier,
+        )
     
     def get_usage_stats(self) -> dict:
         """Get detailed usage statistics."""
-        active_tier = self._determine_voice_tier(self.voice_name)
-        stats = {
-            'month': self.usage_data['month'],
-            'active_voice': self.voice_name,
-            'using_fallback': self.using_fallback,
-            'primary_voice': self.primary_voice_name,
-            'primary_tier': self.voice_tier,
-            'primary_usage': self.usage_data['tiers'][self.voice_tier],
-            'primary_limit': self.VOICE_TIERS[self.voice_tier]['free_chars'],
-            'primary_remaining': self.VOICE_TIERS[self.voice_tier]['free_chars'] - self.usage_data['tiers'][self.voice_tier],
-            'total_requests': self.usage_data['total_requests'],
-            'all_tiers': self.usage_data['tiers']
-        }
-        stats['primary_percentage_used'] = (stats['primary_usage'] / stats['primary_limit']) * 100
-        
-        if self.fallback_voice:
-            stats['fallback_voice'] = self.fallback_voice
-            stats['fallback_tier'] = self.fallback_tier
-            stats['fallback_usage'] = self.usage_data['tiers'][self.fallback_tier]
-            stats['fallback_limit'] = self.VOICE_TIERS[self.fallback_tier]['free_chars']
-            stats['fallback_remaining'] = stats['fallback_limit'] - stats['fallback_usage']
-            stats['fallback_percentage_used'] = (stats['fallback_usage'] / stats['fallback_limit']) * 100
-        
-        return stats
+        return self._usage_tracker.usage_stats(
+            usage_data=self.usage_data,
+            voice_name=self.voice_name,
+            using_fallback=self.using_fallback,
+            primary_voice_name=self.primary_voice_name,
+            voice_tier=self.voice_tier,
+            fallback_voice=self.fallback_voice,
+            fallback_tier=self.fallback_tier,
+        )
     
     def get_active_voice_info(self) -> dict:
         """Get information about the currently active voice."""
