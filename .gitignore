@@ -14,3 +14,4 @@ coverage.xml
 .my_secrets
 data/tmp_audio/
 logs/
+*.egg-info/

@@ -34,9 +34,12 @@ My personal AI assistant
         ```
 4. **Install dependencies**
     ```bash
-    pip install -r requirements.txt
+    pip install -e ".[dev]"
     ```
-    > For **macOS** you may need to use `pip3 install -r requirements.txt`.
+    > For **macOS** you may need to use `pip3 install -e ".[dev]"`.
+
+    This installs runtime dependencies from `requirements.txt` and development tools
+    (such as `pytest`) from `pyproject.toml`.
 5. **Create the `.env` file**
     
     Copy the `.env.example` file and rename it `.env`:
@@ -79,6 +82,11 @@ For configuration specifics, see [`docs/system_overview.md`](docs/system_overvie
     ```bash
     deactivate
     ```
+* **Run tests**
+    ```bash
+    python -m pytest
+    ```
+    By default, interactive/manual scripts are excluded from this run.
 * **(Optional) Export Installed Packages**
     
     If you add new dependencies, update the `requirements.txt`:

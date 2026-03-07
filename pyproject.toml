@@ -8,7 +8,21 @@ version = "0.1.0"
 description = "Voice assistant core package"
 authors = [{ name = "ToBeAss" }]
 requires-python = ">=3.10"
-dependencies = []
+dynamic = ["dependencies"]
 
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = [
+	"pytest>=8.0",
+	"pytest-cov>=5.0",
+]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+	"--ignore=tests/manual",
+	"--ignore=tests/audio/test_tts_pronunciation.py",
+	"--ignore=tests/pipeline/test_parallel_processing.py",
+]
