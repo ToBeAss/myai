@@ -1,13 +1,13 @@
 {
-  "month": "2025-11",
+  "month": "2025-12",
   "tiers": {
     "standard": 0,
     "wavenet": 0,
     "neural2": 0,
     "studio": 0,
-    "chirp": 99885,
+    "chirp": 4699,
     "polyglot": 0
   },
-  "total_requests": 1749,
-  "last_updated": "2025-11-30T19:09:45.530770"
+  "total_requests": 100,
+  "last_updated": "2025-12-20T19:21:34.054561"
 }

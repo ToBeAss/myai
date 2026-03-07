@@ -197,6 +197,12 @@
             "timestamp": "02.12.2025 14:44",
             "type": "preference",
             "content": "Productivity hacks Tobias found useful and wants to remember: 1) The 'background meeting' hack as a mental cue to switch into work mode. 2) The 'two-minute start' trick to bypass initial procrastination by committing to just two minutes of work. 3) The 'time box' method of working in short, timed bursts (like 25 minutes) to sharpen focus and manage fatigue. These help break overwhelm into manageable chunks and boost motivation."
+        },
+        {
+            "id": 34,
+            "timestamp": "20.12.2025 19:17",
+            "type": "project",
+            "content": "Tobias has decided to use GPT-4.1 nano as the standard model for quick interactions, with an escalation system to switch to GPT-4.1 mini or full for more complex tasks. This approach balances responsiveness and capability, optimizing performance for voice assistant use cases."
         }
     ]
 }
