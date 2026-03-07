@@ -191,6 +191,12 @@
             "timestamp": "29.11.2025 23:52",
             "type": "preference",
             "content": "Tobias likes the red wine 19 Crimes. Alternative wines with a similar bold, fruity, easy-drinking style include Portuguese blends like Porta 6 Tinto, and Laithwaites Black Stump, which offers a full-bodied taste in the same dark fruity vein. Generally, wines that have rich blackberry and black cherry notes with approachable profiles should suit Tobias."
+        },
+        {
+            "id": 33,
+            "timestamp": "02.12.2025 14:44",
+            "type": "preference",
+            "content": "Productivity hacks Tobias found useful and wants to remember: 1) The 'background meeting' hack as a mental cue to switch into work mode. 2) The 'two-minute start' trick to bypass initial procrastination by committing to just two minutes of work. 3) The 'time box' method of working in short, timed bursts (like 25 minutes) to sharpen focus and manage fatigue. These help break overwhelm into manageable chunks and boost motivation."
         }
     ]
 }
