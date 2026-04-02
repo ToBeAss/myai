@@ -482,7 +482,7 @@ class TextToSpeech:
         except Exception:
             return 0.0
 
-    def speak_streaming_async(self, text_generator, chunk_on: str = ".", print_text: bool = True,
+    def speak_streaming_async(self, text_generator, chunk_on: str = ",.!?", print_text: bool = True,
                               min_chunk_size: int = 15):
         """
         Speak text as it's being generated with truly parallel processing.
@@ -510,7 +510,8 @@ class TextToSpeech:
 
         # ---- per-call timing state (reset each invocation) ----
         chunk_index = 0
-        synthesis_times: list[float] = []
+        synthesis_count = 0
+        synthesis_sum = 0.0
         avg_synthesis_time = 0.4  # seeded at 400 ms
 
         # Shared playback state – accessed from main + playback threads
@@ -519,7 +520,8 @@ class TextToSpeech:
             "playback_active": False,
             "play_start": 0.0,       # time.monotonic() when current file started
             "play_duration": 0.0,     # duration in seconds of current file
-            "queued_durations": [],    # durations of files waiting in playback_queue
+            "queued_total": 0.0,      # total duration of files waiting in playback_queue
+            "has_audio": False,       # True once first synthesis result is queued
         }
 
         def _remaining_playback_time() -> float:
@@ -529,13 +531,14 @@ class TextToSpeech:
                 if state["playback_active"]:
                     elapsed = time.monotonic() - state["play_start"]
                     remaining = max(0.0, state["play_duration"] - elapsed)
-                remaining += sum(state["queued_durations"])
+                remaining += state["queued_total"]
                 return remaining
 
         def _update_avg(duration: float):
-            nonlocal avg_synthesis_time
-            synthesis_times.append(duration)
-            avg_synthesis_time = sum(synthesis_times) / len(synthesis_times)
+            nonlocal avg_synthesis_time, synthesis_count, synthesis_sum
+            synthesis_count += 1
+            synthesis_sum += duration
+            avg_synthesis_time = synthesis_sum / synthesis_count
 
         # ---- worker threads ----
         def synthesis_worker():
@@ -561,7 +564,8 @@ class TextToSpeech:
                         _update_avg(synth_dur)
 
                         with state_lock:
-                            state["queued_durations"].append(audio_dur)
+                            state["queued_total"] += audio_dur
+                            state["has_audio"] = True
 
                         playback_queue.put((audio_file, audio_dur))
                 except Exception as e:
@@ -586,8 +590,7 @@ class TextToSpeech:
                         print(f"\n⚠️  Playback stall: waited {now - last_end:.1f}s for next chunk")
 
                     with state_lock:
-                        if state["queued_durations"]:
-                            state["queued_durations"].pop(0)
+                        state["queued_total"] = max(0.0, state["queued_total"] - audio_dur)
                         state["play_start"] = time.monotonic()
                         state["play_duration"] = audio_dur
                         state["playback_active"] = True
@@ -599,18 +602,15 @@ class TextToSpeech:
                         time.sleep(0.05)
 
                     last_end = time.monotonic()
-
+                except Exception as e:
+                    print(f"\n❌ Playback error: {e}")
+                finally:
                     with state_lock:
                         state["playback_active"] = False
-
                     try:
                         os.remove(audio_file)
                     except Exception:
                         pass
-                except Exception as e:
-                    print(f"\n❌ Playback error: {e}")
-                    with state_lock:
-                        state["playback_active"] = False
 
                 playback_queue.task_done()
 
@@ -642,6 +642,14 @@ class TextToSpeech:
                     # --- Chunk 1+: quality chunks – sentence boundaries only ---
                     sentence_boundary = self._find_sentence_boundary(buffer, ".!?")
                     if sentence_boundary < 0:
+                        continue
+
+                    # Wait until chunk 0 has been synthesised and we have a real
+                    # playback window to compare against; otherwise remaining==0
+                    # would trigger immediately before any audio is ready.
+                    with state_lock:
+                        has_audio = state["has_audio"]
+                    if not has_audio:
                         continue
 
                     remaining = _remaining_playback_time()
