@@ -461,22 +461,83 @@ class TextToSpeech:
             speech_queue.put(None)  # Stop the worker
             speech_thread.join()
     
+    @staticmethod
+    def _get_audio_duration(file_path: str) -> float:
+        """Get the duration of an audio file in seconds using pygame.
+
+        Falls back to a file-size estimate (~4 KB/s for Google TTS MP3) if
+        pygame.mixer.Sound cannot determine the length.
+        """
+        try:
+            sound = pygame.mixer.Sound(file_path)
+            duration = sound.get_length()
+            del sound
+            if duration > 0:
+                return duration
+        except Exception:
+            pass
+        # Fallback: estimate from file size assuming ~32 kbps MP3 (4 KB/s)
+        try:
+            return os.path.getsize(file_path) / 4000.0
+        except Exception:
+            return 0.0
+
     def speak_streaming_async(self, text_generator, chunk_on: str = ".", print_text: bool = True,
                               min_chunk_size: int = 15):
         """
         Speak text as it's being generated with truly parallel processing.
         Multiple sentences can be synthesized and queued while others are playing.
         This provides the fastest response time.
-        
+
+        Chunking strategy
+        -----------------
+        * **Chunk 0 (fast start):** fire synthesis at the first punctuation
+          boundary (including commas) to minimise time-to-first-sound.
+        * **Chunk 1+ (quality chunks):** accumulate tokens and trigger synthesis
+          at the first sentence-ending boundary (``.!?``) where the remaining
+          playback time of previously queued audio drops to within
+          ``avg_synthesis_time + 200 ms``.  This maximises input length for
+          better prosody while keeping playback gapless.
+
         :param text_generator: Generator that yields text tokens
-        :param chunk_on: Character to chunk on (default: "." for sentences)
+        :param chunk_on: Character to chunk on for chunk 0 (default: ".")
         :param print_text: If True, print the text as it's being spoken
         :param min_chunk_size: Minimum characters before considering a chunk (prevents tiny fragments, default 15)
         """
         buffer = ""
         synthesis_queue = queue.Queue()
         playback_queue = queue.Queue()
-        
+
+        # ---- per-call timing state (reset each invocation) ----
+        chunk_index = 0
+        synthesis_times: list[float] = []
+        avg_synthesis_time = 0.4  # seeded at 400 ms
+
+        # Shared playback state – accessed from main + playback threads
+        state_lock = threading.Lock()
+        state = {
+            "playback_active": False,
+            "play_start": 0.0,       # time.monotonic() when current file started
+            "play_duration": 0.0,     # duration in seconds of current file
+            "queued_durations": [],    # durations of files waiting in playback_queue
+        }
+
+        def _remaining_playback_time() -> float:
+            """Total seconds of audio still to play (current + queued)."""
+            with state_lock:
+                remaining = 0.0
+                if state["playback_active"]:
+                    elapsed = time.monotonic() - state["play_start"]
+                    remaining = max(0.0, state["play_duration"] - elapsed)
+                remaining += sum(state["queued_durations"])
+                return remaining
+
+        def _update_avg(duration: float):
+            nonlocal avg_synthesis_time
+            synthesis_times.append(duration)
+            avg_synthesis_time = sum(synthesis_times) / len(synthesis_times)
+
+        # ---- worker threads ----
         def synthesis_worker():
             """Worker thread that synthesizes speech."""
             while True:
@@ -485,98 +546,133 @@ class TextToSpeech:
                     synthesis_queue.task_done()
                     playback_queue.put(None)  # Signal playback worker
                     break
-                
+
                 text_to_speak = item
                 try:
-                    # Create a temporary file for the audio
                     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as temp_file:
                         temp_filename = temp_file.name
-                    
-                    # Synthesize speech to the temp file
+
+                    t0 = time.monotonic()
                     audio_file = self.synthesize_to_file(text_to_speak, temp_filename)
+                    synth_dur = time.monotonic() - t0
+
                     if audio_file:
-                        playback_queue.put(audio_file)
+                        audio_dur = self._get_audio_duration(audio_file)
+                        _update_avg(synth_dur)
+
+                        with state_lock:
+                            state["queued_durations"].append(audio_dur)
+
+                        playback_queue.put((audio_file, audio_dur))
                 except Exception as e:
                     print(f"\n❌ Synthesis error: {e}")
-                
+
                 synthesis_queue.task_done()
-        
+
         def playback_worker():
             """Worker thread that plays synthesized audio."""
+            last_end: float = 0.0  # monotonic time previous chunk finished
             while True:
-                audio_file = playback_queue.get()
-                if audio_file is None:
+                item = playback_queue.get()
+                if item is None:
                     playback_queue.task_done()
                     break
-                
+
+                audio_file, audio_dur = item
                 try:
+                    # Detect stalls (playback queue went empty)
+                    now = time.monotonic()
+                    if last_end > 0 and (now - last_end) > 0.15:
+                        print(f"\n⚠️  Playback stall: waited {now - last_end:.1f}s for next chunk")
+
+                    with state_lock:
+                        if state["queued_durations"]:
+                            state["queued_durations"].pop(0)
+                        state["play_start"] = time.monotonic()
+                        state["play_duration"] = audio_dur
+                        state["playback_active"] = True
+
                     pygame.mixer.music.load(audio_file)
                     pygame.mixer.music.play()
-                    
-                    # Wait for playback to finish
+
                     while pygame.mixer.music.get_busy():
-                        time.sleep(0.1)
-                    
-                    # Clean up the temporary file
+                        time.sleep(0.05)
+
+                    last_end = time.monotonic()
+
+                    with state_lock:
+                        state["playback_active"] = False
+
                     try:
                         os.remove(audio_file)
-                    except:
+                    except Exception:
                         pass
                 except Exception as e:
                     print(f"\n❌ Playback error: {e}")
-                
+                    with state_lock:
+                        state["playback_active"] = False
+
                 playback_queue.task_done()
-        
+
         # Start worker threads
         synthesis_thread = threading.Thread(target=synthesis_worker, daemon=True)
         playback_thread = threading.Thread(target=playback_worker, daemon=True)
         synthesis_thread.start()
         playback_thread.start()
-        
+
         try:
-            # Process tokens from the LLM
             for token in text_generator:
                 if print_text:
                     print(token.content, end="", flush=True)
                 buffer += token.content
-                
-                # Check if we have potential sentence boundaries
-                if any(c in buffer for c in chunk_on):
-                    # Find the last valid sentence boundary
-                    last_chunk_idx = self._find_sentence_boundary(buffer, chunk_on)
-                    
-                    if last_chunk_idx >= 0:
-                        # Extract the complete sentence(s)
-                        to_speak = buffer[:last_chunk_idx + 1].strip()
-                        
-                        # Smart chunking: use different min sizes based on delimiter type
-                        # Complete sentences (.!?) can be shorter, commas need more context
-                        delimiter = buffer[last_chunk_idx] if last_chunk_idx < len(buffer) else ''
-                        effective_min = 5 if delimiter in '.!?' else min_chunk_size
-                        
-                        # Only chunk if we have substantial content (prevents tiny fragments)
-                        # This ensures we don't speak very short incomplete phrases
-                        if len(to_speak) >= effective_min:
-                            # Keep the remainder for the next iteration
-                            buffer = buffer[last_chunk_idx + 1:]
-                            
-                            # Queue for synthesis (non-blocking)
-                            synthesis_queue.put(to_speak)
-            
-            # Process any remaining text
+
+                if chunk_index == 0:
+                    # --- Chunk 0: fast start – fire at first boundary (incl. commas) ---
+                    if any(c in buffer for c in chunk_on):
+                        last_chunk_idx = self._find_sentence_boundary(buffer, chunk_on)
+                        if last_chunk_idx >= 0:
+                            to_speak = buffer[:last_chunk_idx + 1].strip()
+                            delimiter = buffer[last_chunk_idx]
+                            effective_min = 5 if delimiter in '.!?' else min_chunk_size
+                            if len(to_speak) >= effective_min:
+                                buffer = buffer[last_chunk_idx + 1:]
+                                synthesis_queue.put(to_speak)
+                                chunk_index += 1
+                else:
+                    # --- Chunk 1+: quality chunks – sentence boundaries only ---
+                    sentence_boundary = self._find_sentence_boundary(buffer, ".!?")
+                    if sentence_boundary < 0:
+                        continue
+
+                    remaining = _remaining_playback_time()
+                    threshold = avg_synthesis_time + 0.2  # 200 ms margin
+
+                    if remaining <= threshold:
+                        to_speak = buffer[:sentence_boundary + 1].strip()
+
+                        # Edge case: chunk 0 still playing with time to spare
+                        # and buffer text is very short – hold for more tokens
+                        if remaining > threshold * 2 and len(to_speak) < min_chunk_size:
+                            continue
+
+                        buffer = buffer[sentence_boundary + 1:]
+                        synthesis_queue.put(to_speak)
+                        chunk_index += 1
+
+            # LLM stream ended – synthesize whatever is buffered
             if buffer.strip():
                 synthesis_queue.put(buffer.strip())
-            
+
             # Signal workers to stop
             synthesis_queue.put(None)
-            
+
             # Wait for all work to complete
             synthesis_thread.join()
             playback_thread.join()
-            
+
             if print_text:
                 print()  # New line at the end
-                
+
         except Exception as e:
             print(f"\n❌ Error in async streaming speech: {e}")
             synthesis_queue.put(None)
