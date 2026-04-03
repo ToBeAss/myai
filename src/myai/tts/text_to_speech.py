@@ -510,11 +510,8 @@ class TextToSpeech:
 
         # ---- per-call timing state (reset each invocation) ----
         chunk_index = 0
-        synthesis_count = 0
-        synthesis_sum = 0.0
-        avg_synthesis_time = 0.4  # seeded at 400 ms
 
-        # Shared playback state – accessed from main + playback threads
+        # Shared state – accessed from main + worker threads under state_lock
         state_lock = threading.Lock()
         state = {
             "playback_active": False,
@@ -522,6 +519,9 @@ class TextToSpeech:
             "play_duration": 0.0,     # duration in seconds of current file
             "queued_total": 0.0,      # total duration of files waiting in playback_queue
             "has_audio": False,       # True once first synthesis result is queued
+            "synth_count": 0,         # number of completed syntheses
+            "synth_sum": 0.0,         # cumulative synthesis duration
+            "avg_synth": 0.4,         # rolling average, seeded at 400 ms
         }
 
         def _remaining_playback_time() -> float:
@@ -535,10 +535,10 @@ class TextToSpeech:
                 return remaining
 
         def _update_avg(duration: float):
-            nonlocal avg_synthesis_time, synthesis_count, synthesis_sum
-            synthesis_count += 1
-            synthesis_sum += duration
-            avg_synthesis_time = synthesis_sum / synthesis_count
+            with state_lock:
+                state["synth_count"] += 1
+                state["synth_sum"] += duration
+                state["avg_synth"] = state["synth_sum"] / state["synth_count"]
 
         # ---- worker threads ----
         def synthesis_worker():
@@ -551,6 +551,7 @@ class TextToSpeech:
                     break
 
                 text_to_speak = item
+                temp_filename = None
                 try:
                     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as temp_file:
                         temp_filename = temp_file.name
@@ -568,8 +569,20 @@ class TextToSpeech:
                             state["has_audio"] = True
 
                         playback_queue.put((audio_file, audio_dur))
+                    else:
+                        # Synthesis returned nothing (e.g. quota block) – clean up
+                        if temp_filename:
+                            try:
+                                os.remove(temp_filename)
+                            except Exception:
+                                pass
                 except Exception as e:
                     print(f"\n❌ Synthesis error: {e}")
+                    if temp_filename:
+                        try:
+                            os.remove(temp_filename)
+                        except Exception:
+                            pass
 
                 synthesis_queue.task_done()
 
@@ -629,17 +642,21 @@ class TextToSpeech:
                 if chunk_index == 0:
                     # --- Chunk 0: fast start – fire at first boundary (incl. commas) ---
                     if any(c in buffer for c in chunk_on):
-                        last_chunk_idx = self._find_sentence_boundary(buffer, chunk_on)
-                        if last_chunk_idx >= 0:
-                            to_speak = buffer[:last_chunk_idx + 1].strip()
-                            delimiter = buffer[last_chunk_idx]
+                        first_idx = find_sentence_boundary(buffer, chunk_on, first_only=True)
+                        if first_idx >= 0:
+                            to_speak = buffer[:first_idx + 1].strip()
+                            delimiter = buffer[first_idx]
                             effective_min = 5 if delimiter in '.!?' else min_chunk_size
                             if len(to_speak) >= effective_min:
-                                buffer = buffer[last_chunk_idx + 1:]
+                                buffer = buffer[first_idx + 1:]
                                 synthesis_queue.put(to_speak)
                                 chunk_index += 1
                 else:
                     # --- Chunk 1+: quality chunks – sentence boundaries only ---
+                    # Short-circuit: skip the full buffer scan when the new
+                    # token contains no sentence-ending punctuation.
+                    if not any(c in token.content for c in ".!?"):
+                        continue
                     sentence_boundary = self._find_sentence_boundary(buffer, ".!?")
                     if sentence_boundary < 0:
                         continue
@@ -649,11 +666,12 @@ class TextToSpeech:
                     # would trigger immediately before any audio is ready.
                     with state_lock:
                         has_audio = state["has_audio"]
+                        current_avg_synth = state["avg_synth"]
                     if not has_audio:
                         continue
 
                     remaining = _remaining_playback_time()
-                    threshold = avg_synthesis_time + 0.2  # 200 ms margin
+                    threshold = current_avg_synth + 0.2  # 200 ms margin
 
                     if remaining <= threshold:
                         to_speak = buffer[:sentence_boundary + 1].strip()
