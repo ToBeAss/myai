@@ -462,21 +462,13 @@ class TextToSpeech:
             speech_thread.join()
     
     @staticmethod
-    def _get_audio_duration(file_path: str) -> float:
-        """Get the duration of an audio file in seconds using pygame.
+    def _estimate_audio_duration(file_path: str) -> float:
+        """Estimate the duration of an MP3 file from its size.
 
-        Falls back to a file-size estimate (~4 KB/s for Google TTS MP3) if
-        pygame.mixer.Sound cannot determine the length.
+        Uses ~32 kbps (4 KB/s), which is typical for Google Cloud TTS MP3
+        output.  This avoids calling any pygame API so it is safe to use
+        from any thread.
         """
-        try:
-            sound = pygame.mixer.Sound(file_path)
-            duration = sound.get_length()
-            del sound
-            if duration > 0:
-                return duration
-        except Exception:
-            pass
-        # Fallback: estimate from file size assuming ~32 kbps MP3 (4 KB/s)
         try:
             return os.path.getsize(file_path) / 4000.0
         except Exception:
@@ -510,6 +502,7 @@ class TextToSpeech:
 
         # ---- per-call timing state (reset each invocation) ----
         chunk_index = 0
+        pending_boundary = -1  # cached sentence boundary index for chunk 1+
 
         # Shared state – accessed from main + worker threads under state_lock
         state_lock = threading.Lock()
@@ -561,7 +554,7 @@ class TextToSpeech:
                     synth_dur = time.monotonic() - t0
 
                     if audio_file:
-                        audio_dur = self._get_audio_duration(audio_file)
+                        audio_dur = self._estimate_audio_duration(audio_file)
                         _update_avg(synth_dur)
 
                         with state_lock:
@@ -595,17 +588,31 @@ class TextToSpeech:
                     playback_queue.task_done()
                     break
 
-                audio_file, audio_dur = item
+                audio_file, estimated_dur = item
                 try:
                     # Detect stalls (playback queue went empty)
                     now = time.monotonic()
                     if last_end > 0 and (now - last_end) > 0.15:
                         print(f"\n⚠️  Playback stall: waited {now - last_end:.1f}s for next chunk")
 
+                    # Get accurate duration via pygame (all pygame calls
+                    # happen on this single thread to avoid cross-thread
+                    # SDL_mixer issues).
+                    try:
+                        snd = pygame.mixer.Sound(audio_file)
+                        actual_dur = snd.get_length()
+                        del snd
+                        if actual_dur <= 0:
+                            actual_dur = estimated_dur
+                    except Exception:
+                        actual_dur = estimated_dur
+
                     with state_lock:
-                        state["queued_total"] = max(0.0, state["queued_total"] - audio_dur)
+                        # Correct queued_total: remove the estimate, the
+                        # play_duration field now uses the real value.
+                        state["queued_total"] = max(0.0, state["queued_total"] - estimated_dur)
                         state["play_start"] = time.monotonic()
-                        state["play_duration"] = audio_dur
+                        state["play_duration"] = actual_dur
                         state["playback_active"] = True
 
                     pygame.mixer.music.load(audio_file)
@@ -653,12 +660,13 @@ class TextToSpeech:
                                 chunk_index += 1
                 else:
                     # --- Chunk 1+: quality chunks – sentence boundaries only ---
-                    # Short-circuit: skip the full buffer scan when the new
-                    # token contains no sentence-ending punctuation.
-                    if not any(c in token.content for c in ".!?"):
-                        continue
-                    sentence_boundary = self._find_sentence_boundary(buffer, ".!?")
-                    if sentence_boundary < 0:
+                    # Only rescan the buffer when the new token contains
+                    # sentence-ending punctuation; otherwise reuse the cached
+                    # boundary so we still re-evaluate timing each token.
+                    if any(c in token.content for c in ".!?"):
+                        pending_boundary = self._find_sentence_boundary(buffer, ".!?")
+
+                    if pending_boundary < 0:
                         continue
 
                     # Wait until chunk 0 has been synthesised and we have a real
@@ -674,16 +682,17 @@ class TextToSpeech:
                     threshold = current_avg_synth + 0.2  # 200 ms margin
 
                     if remaining <= threshold:
-                        to_speak = buffer[:sentence_boundary + 1].strip()
+                        to_speak = buffer[:pending_boundary + 1].strip()
 
                         # Edge case: chunk 0 still playing with time to spare
                         # and buffer text is very short – hold for more tokens
                         if remaining > threshold * 2 and len(to_speak) < min_chunk_size:
                             continue
 
-                        buffer = buffer[sentence_boundary + 1:]
+                        buffer = buffer[pending_boundary + 1:]
                         synthesis_queue.put(to_speak)
                         chunk_index += 1
+                        pending_boundary = -1  # reset after consuming
 
             # LLM stream ended – synthesize whatever is buffered
             if buffer.strip():
