@@ -607,19 +607,15 @@ class TextToSpeech:
                     except Exception:
                         actual_dur = estimated_dur
 
-                    with state_lock:
-                        # Correct queued_total: remove the estimate, the
-                        # play_duration field now uses the real value.
-                        state["queued_total"] = max(0.0, state["queued_total"] - estimated_dur)
-                        state["play_duration"] = actual_dur
-
                     pygame.mixer.music.load(audio_file)
                     pygame.mixer.music.play()
 
-                    # Set play_start and playback_active together after
-                    # .play() so _remaining_playback_time() never sees
-                    # playback_active=True with a stale play_start.
+                    # Atomically move the chunk from queued_total into
+                    # active playback tracking so _remaining_playback_time()
+                    # never undercounts during the load/play window.
                     with state_lock:
+                        state["queued_total"] = max(0.0, state["queued_total"] - estimated_dur)
+                        state["play_duration"] = actual_dur
                         state["play_start"] = time.monotonic()
                         state["playback_active"] = True
 
