@@ -520,11 +520,15 @@ class TextToSpeech:
         def _remaining_playback_time() -> float:
             """Total seconds of audio still to play (current + queued)."""
             with state_lock:
-                remaining = 0.0
+                remaining = state["queued_total"]
                 if state["playback_active"]:
                     elapsed = time.monotonic() - state["play_start"]
-                    remaining = max(0.0, state["play_duration"] - elapsed)
-                remaining += state["queued_total"]
+                    remaining += max(0.0, state["play_duration"] - elapsed)
+                else:
+                    # Chunk being loaded but not yet playing; its
+                    # duration was moved from queued_total into
+                    # play_duration on dequeue.
+                    remaining += state["play_duration"]
                 return remaining
 
         def _update_avg(duration: float):
@@ -589,6 +593,14 @@ class TextToSpeech:
                     break
 
                 audio_file, estimated_dur = item
+
+                # Immediately move the chunk out of queued_total and
+                # into play_duration so _remaining_playback_time()
+                # always accounts for it (either as queued or active).
+                with state_lock:
+                    state["queued_total"] = max(0.0, state["queued_total"] - estimated_dur)
+                    state["play_duration"] = estimated_dur
+
                 try:
                     # Detect stalls (playback queue went empty)
                     now = time.monotonic()
@@ -610,11 +622,7 @@ class TextToSpeech:
                     pygame.mixer.music.load(audio_file)
                     pygame.mixer.music.play()
 
-                    # Atomically move the chunk from queued_total into
-                    # active playback tracking so _remaining_playback_time()
-                    # never undercounts during the load/play window.
                     with state_lock:
-                        state["queued_total"] = max(0.0, state["queued_total"] - estimated_dur)
                         state["play_duration"] = actual_dur
                         state["play_start"] = time.monotonic()
                         state["playback_active"] = True
@@ -628,6 +636,7 @@ class TextToSpeech:
                 finally:
                     with state_lock:
                         state["playback_active"] = False
+                        state["play_duration"] = 0.0
                     try:
                         os.remove(audio_file)
                     except Exception:
