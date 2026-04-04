@@ -492,7 +492,7 @@ class TextToSpeech:
           better prosody while keeping playback gapless.
 
         :param text_generator: Generator that yields text tokens
-        :param chunk_on: Character to chunk on for chunk 0 (default: ".")
+        :param chunk_on: Characters used to detect chunk 0 boundaries only (default: ``",.!?"``)
         :param print_text: If True, print the text as it's being spoken
         :param min_chunk_size: Minimum characters before considering a chunk (prevents tiny fragments, default 15)
         """
@@ -611,12 +611,16 @@ class TextToSpeech:
                         # Correct queued_total: remove the estimate, the
                         # play_duration field now uses the real value.
                         state["queued_total"] = max(0.0, state["queued_total"] - estimated_dur)
-                        state["play_start"] = time.monotonic()
                         state["play_duration"] = actual_dur
                         state["playback_active"] = True
 
                     pygame.mixer.music.load(audio_file)
                     pygame.mixer.music.play()
+
+                    # Set play_start after .play() so elapsed time reflects
+                    # actual playback, not load latency.
+                    with state_lock:
+                        state["play_start"] = time.monotonic()
 
                     while pygame.mixer.music.get_busy():
                         time.sleep(0.05)
