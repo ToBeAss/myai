@@ -612,15 +612,16 @@ class TextToSpeech:
                         # play_duration field now uses the real value.
                         state["queued_total"] = max(0.0, state["queued_total"] - estimated_dur)
                         state["play_duration"] = actual_dur
-                        state["playback_active"] = True
 
                     pygame.mixer.music.load(audio_file)
                     pygame.mixer.music.play()
 
-                    # Set play_start after .play() so elapsed time reflects
-                    # actual playback, not load latency.
+                    # Set play_start and playback_active together after
+                    # .play() so _remaining_playback_time() never sees
+                    # playback_active=True with a stale play_start.
                     with state_lock:
                         state["play_start"] = time.monotonic()
+                        state["playback_active"] = True
 
                     while pygame.mixer.music.get_busy():
                         time.sleep(0.05)
