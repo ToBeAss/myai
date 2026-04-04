@@ -101,6 +101,31 @@ def find_sentence_boundary(text: str, chunk_chars: str = ".!?", first_only: bool
     When *first_only* is True the first valid boundary is returned (useful for
     fast-start chunking).  Otherwise the last valid boundary is returned
     (maximises chunk length for better prosody).
+
+    >>> text = "Hello world. Another sentence!"
+    >>> find_sentence_boundary(text)
+    29
+    >>> find_sentence_boundary(text, first_only=True)
+    11
+
+    Decimals should not be split at the period:
+
+    >>> find_sentence_boundary("The value is 3.14 and rising.")
+    28
+    >>> find_sentence_boundary("Version 2.0")
+    -1
+
+    Initials / abbreviations stay connected:
+
+    >>> find_sentence_boundary("Meet J. T. Smith.")
+    16
+    >>> find_sentence_boundary("Meet J. T. Smith.", first_only=True)
+    16
+
+    When commas are enabled, weak commas are skipped:
+
+    >>> find_sentence_boundary("Count 1, 2, 3", chunk_chars=",")
+    -1
     """
     last_valid_boundary = -1
 

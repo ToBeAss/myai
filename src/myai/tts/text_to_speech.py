@@ -485,11 +485,11 @@ class TextToSpeech:
         -----------------
         * **Chunk 0 (fast start):** fire synthesis at the first punctuation
           boundary (including commas) to minimise time-to-first-sound.
-        * **Chunk 1+ (quality chunks):** accumulate tokens and trigger synthesis
-          at the first sentence-ending boundary (``.!?``) where the remaining
-          playback time of previously queued audio drops to within
-          ``avg_synthesis_time + 200 ms``.  This maximises input length for
-          better prosody while keeping playback gapless.
+        * **Chunk 1+ (quality chunks):** accumulate tokens and, once the
+          remaining playback time of previously queued audio drops to within
+          ``avg_synthesis_time + 200 ms``, trigger synthesis at the last
+          available sentence-ending boundary (``.!?``).  This maximises input
+          length for better prosody while keeping playback gapless.
 
         :param text_generator: Generator that yields text tokens
         :param chunk_on: Characters used to detect chunk 0 boundaries only (default: ``",.!?"``)
@@ -651,17 +651,31 @@ class TextToSpeech:
                 buffer += token.content
 
                 if chunk_index == 0:
-                    # --- Chunk 0: fast start – fire at first boundary (incl. commas) ---
+                    # --- Chunk 0: fast start – fire at earliest acceptable boundary ---
                     if any(c in buffer for c in chunk_on):
-                        first_idx = find_sentence_boundary(buffer, chunk_on, first_only=True)
-                        if first_idx >= 0:
-                            to_speak = buffer[:first_idx + 1].strip()
-                            delimiter = buffer[first_idx]
+                        search_start = 0
+                        while search_start < len(buffer):
+                            rel_idx = find_sentence_boundary(
+                                buffer[search_start:], chunk_on, first_only=True,
+                            )
+                            if rel_idx < 0:
+                                break
+                            idx = search_start + rel_idx
+                            candidate = buffer[:idx + 1].strip()
+                            delimiter = buffer[idx]
                             effective_min = 5 if delimiter in '.!?' else min_chunk_size
-                            if len(to_speak) >= effective_min:
-                                buffer = buffer[first_idx + 1:]
-                                synthesis_queue.put(to_speak)
+                            if len(candidate) >= effective_min:
+                                buffer = buffer[idx + 1:]
+                                synthesis_queue.put(candidate)
                                 chunk_index += 1
+                                # Remainder may already contain sentence-
+                                # ending punctuation; seed pending_boundary
+                                # so chunk 1+ doesn't wait for a future token.
+                                pending_boundary = self._find_sentence_boundary(
+                                    buffer, ".!?",
+                                )
+                                break
+                            search_start = idx + 1
                 else:
                     # --- Chunk 1+: quality chunks – sentence boundaries only ---
                     # Only rescan the buffer when the new token contains
