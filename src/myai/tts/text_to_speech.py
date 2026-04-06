@@ -705,14 +705,14 @@ class TextToSpeech:
                     remaining = _remaining_playback_time()
                     threshold = current_avg_synth + 0.2  # 200 ms margin
 
+                    to_speak = buffer[:pending_boundary + 1].strip()
+
+                    # Edge case: chunk 0 still playing with time to spare
+                    # and buffer text is very short – hold for more tokens
+                    if remaining > threshold * 2 and len(to_speak) < min_chunk_size:
+                        continue
+
                     if remaining <= threshold:
-                        to_speak = buffer[:pending_boundary + 1].strip()
-
-                        # Edge case: chunk 0 still playing with time to spare
-                        # and buffer text is very short – hold for more tokens
-                        if remaining > threshold * 2 and len(to_speak) < min_chunk_size:
-                            continue
-
                         buffer = buffer[pending_boundary + 1:]
                         synthesis_queue.put(to_speak)
                         chunk_index += 1
