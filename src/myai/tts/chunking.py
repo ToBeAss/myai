@@ -95,26 +95,62 @@ def is_weak_comma(text: str, position: int) -> bool:
     return False
 
 
-def find_sentence_boundary(text: str, chunk_chars: str = ".!?") -> int:
-    """Find the last valid boundary index in text, or -1 if none found."""
+def find_sentence_boundary(text: str, chunk_chars: str = ".!?", first_only: bool = False) -> int:
+    """Find a valid boundary index in text, or -1 if none found.
+
+    When *first_only* is True the first valid boundary is returned (useful for
+    fast-start chunking).  Otherwise the last valid boundary is returned
+    (maximises chunk length for better prosody).
+
+    >>> text = "Hello world. Another sentence!"
+    >>> find_sentence_boundary(text)
+    29
+    >>> find_sentence_boundary(text, first_only=True)
+    11
+
+    Decimals should not be split at the period:
+
+    >>> find_sentence_boundary("The value is 3.14 and rising.")
+    28
+    >>> find_sentence_boundary("Version 2.0")
+    -1
+
+    Initials / abbreviations stay connected:
+
+    >>> find_sentence_boundary("Meet J. T. Smith.")
+    16
+    >>> find_sentence_boundary("Meet J. T. Smith.", first_only=True)
+    16
+
+    When commas are enabled, weak commas are skipped:
+
+    >>> find_sentence_boundary("Count 1, 2, 3", chunk_chars=",")
+    -1
+    """
     last_valid_boundary = -1
 
     for i, char in enumerate(text):
         if char not in chunk_chars:
             continue
 
+        valid = False
         if char == ".":
             if is_sentence_boundary(text, i):
-                last_valid_boundary = i
+                valid = True
         elif char == ",":
             if not is_weak_comma(text, i):
-                last_valid_boundary = i
+                valid = True
         elif char == "—":
             if i > 0 and (i + 1 >= len(text) or text[i + 1] != "—"):
-                last_valid_boundary = i
+                valid = True
         else:
             if i > 0 and text[i - 1] in "!?":
                 continue
+            valid = True
+
+        if valid:
+            if first_only:
+                return i
             last_valid_boundary = i
 
     return last_valid_boundary
