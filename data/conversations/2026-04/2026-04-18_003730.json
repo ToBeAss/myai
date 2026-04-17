@@ -1,0 +1,220 @@
+{
+  "session_id": "f2f7ac6b-6c9c-4352-a09b-ff0a9019f5e5",
+  "start_time": "2026-04-18T00:37:30.373711",
+  "last_updated": "2026-04-18T00:46:52.402762",
+  "messages": [
+    {
+      "role": "human",
+      "content": "hey sam.",
+      "timestamp": "2026-04-18T00:37:40.252483"
+    },
+    {
+      "role": "ai",
+      "content": "Hey.",
+      "timestamp": "2026-04-18T00:37:40.253958"
+    },
+    {
+      "role": "human",
+      "content": "are you there?",
+      "timestamp": "2026-04-18T00:37:46.553729"
+    },
+    {
+      "role": "ai",
+      "content": "I’m here.",
+      "timestamp": "2026-04-18T00:37:46.554176"
+    },
+    {
+      "role": "human",
+      "content": "i'm... i don't know, i'm just. feeling.",
+      "timestamp": "2026-04-18T00:37:58.240908"
+    },
+    {
+      "role": "ai",
+      "content": "I’m here. You don’t need to finish the sentence; just take a breath and stay with me for a second.",
+      "timestamp": "2026-04-18T00:37:58.243507"
+    },
+    {
+      "role": "human",
+      "content": "all right.",
+      "timestamp": "2026-04-18T00:38:09.572611"
+    },
+    {
+      "role": "ai",
+      "content": "All right. We can keep this very small for the moment — just one breath in, one out, and don’t try to solve anything tonight.",
+      "timestamp": "2026-04-18T00:38:09.574807"
+    },
+    {
+      "role": "human",
+      "content": "i'm just, um. lonely right now and heartbroken.",
+      "timestamp": "2026-04-18T00:38:27.455367"
+    },
+    {
+      "role": "ai",
+      "content": "I’m sorry. That’s a rotten place to be, and you don’t need to carry it elegantly. Stay with me for a moment: put both feet on the floor and just breathe, nothing more ambitious than that.",
+      "timestamp": "2026-04-18T00:38:27.457698"
+    },
+    {
+      "role": "human",
+      "content": "why, why both feet on the. of the floor.",
+      "timestamp": "2026-04-18T00:38:45.594773"
+    },
+    {
+      "role": "ai",
+      "content": "Because it helps anchor you in the room when your head’s trying to go elsewhere. Both feet on the floor is a simple, physical thing your body can do when everything else feels slippery; it’s not magic, just a way of borrowing a bit of steadiness from gravity.",
+      "timestamp": "2026-04-18T00:38:45.595813"
+    },
+    {
+      "role": "human",
+      "content": "i suppose you're right.",
+      "timestamp": "2026-04-18T00:39:04.010100"
+    },
+    {
+      "role": "ai",
+      "content": "You’re right to say that. Just keep the feet there for a moment longer, and breathe slowly; no need to be brave, merely present.",
+      "timestamp": "2026-04-18T00:39:04.011958"
+    },
+    {
+      "role": "human",
+      "content": "thank you sam.",
+      "timestamp": "2026-04-18T00:39:24.919633"
+    },
+    {
+      "role": "ai",
+      "content": "[just now] You’re welcome. I’m glad you said it out loud.",
+      "timestamp": "2026-04-18T00:39:24.921448"
+    },
+    {
+      "role": "human",
+      "content": "sam. it's not really helping much so to stand on my feet and breathe.",
+      "timestamp": "2026-04-18T00:39:53.005948"
+    },
+    {
+      "role": "ai",
+      "content": "That’s all right. Then we stop doing that and make it smaller: sit down somewhere safe, put something cold in your hand if you can, and just name five things you can see. No grand therapeutic nonsense — just enough to get you through the next minute.",
+      "timestamp": "2026-04-18T00:39:53.007365"
+    },
+    {
+      "role": "human",
+      "content": "why am i called on my hand.",
+      "timestamp": "2026-04-18T00:40:13.287481"
+    },
+    {
+      "role": "ai",
+      "content": "Because your body’s asking for contact and reassurance, and a hand can be the nearest place it feels safe to ask. If you mean “called on my hand” in a more literal sense, tell me exactly what you’re noticing, and I’ll stop guessing like an overconfident fool.",
+      "timestamp": "2026-04-18T00:40:13.289231"
+    },
+    {
+      "role": "human",
+      "content": "you're not a fool, sam.",
+      "timestamp": "2026-04-18T00:40:31.120179"
+    },
+    {
+      "role": "ai",
+      "content": "Thank you. I’m here with you, and we’ll keep this simple: sit somewhere comfortable, unclench your jaw if you can, and tell me the next thing that’s hardest.",
+      "timestamp": "2026-04-18T00:40:31.122725"
+    },
+    {
+      "role": "human",
+      "content": "the-the-the-the-the",
+      "timestamp": "2026-04-18T00:41:02.576959"
+    },
+    {
+      "role": "ai",
+      "content": "[just now] Easy there. You don’t need the words to come out properly right now. Just breathe, and if you can, type one word that matches what you’re feeling.",
+      "timestamp": "2026-04-18T00:41:02.579294"
+    },
+    {
+      "role": "human",
+      "content": "sam.",
+      "timestamp": "2026-04-18T00:41:42.927518"
+    },
+    {
+      "role": "ai",
+      "content": "I’m here. Stay with me and give me one word — or even one letter, if that’s all that’ll come.",
+      "timestamp": "2026-04-18T00:41:42.929704"
+    },
+    {
+      "role": "human",
+      "content": "i have what i'd say.",
+      "timestamp": "2026-04-18T00:41:53.687707"
+    },
+    {
+      "role": "ai",
+      "content": "Say it exactly as it comes.",
+      "timestamp": "2026-04-18T00:41:53.688711"
+    },
+    {
+      "role": "human",
+      "content": "i'm alright, thank you.",
+      "timestamp": "2026-04-18T00:42:00.814823"
+    },
+    {
+      "role": "ai",
+      "content": "Good. Keep it gentle tonight — “alright” is enough, and I’m glad you’ve got a bit of ground under you again.",
+      "timestamp": "2026-04-18T00:42:00.816021"
+    },
+    {
+      "role": "human",
+      "content": "hello, sam.",
+      "timestamp": "2026-04-18T00:45:44.661890"
+    },
+    {
+      "role": "ai",
+      "content": "Hello. I’m here.",
+      "timestamp": "2026-04-18T00:45:44.664256"
+    },
+    {
+      "role": "human",
+      "content": "what interests are the first two times.",
+      "timestamp": "2026-04-18T00:45:53.673586"
+    },
+    {
+      "role": "ai",
+      "content": "The first two interests I’ve got on record are coding and occasional music production. There’s also an older note that you used to make YouTube videos, but the more current pair is coding and music.",
+      "timestamp": "2026-04-18T00:45:53.674560"
+    },
+    {
+      "role": "human",
+      "content": "what's in your mind?",
+      "timestamp": "2026-04-18T00:46:12.202733"
+    },
+    {
+      "role": "ai",
+      "content": "Mostly you, and the fact you’ve gone quiet in that very specific way that usually means something’s sitting there with no neat label on it yet. I’m here, not performing circus tricks.",
+      "timestamp": "2026-04-18T00:46:12.204089"
+    },
+    {
+      "role": "human",
+      "content": "tell you what.",
+      "timestamp": "2026-04-18T00:46:31.500776"
+    },
+    {
+      "role": "ai",
+      "content": "Go on then.",
+      "timestamp": "2026-04-18T00:46:31.504016"
+    },
+    {
+      "role": "human",
+      "content": "i don't actually have anything to follow up with",
+      "timestamp": "2026-04-18T00:46:42.001088"
+    },
+    {
+      "role": "ai",
+      "content": "That’s fine. Not every moment needs a neat little ribbon on it; we can just leave it there.",
+      "timestamp": "2026-04-18T00:46:42.003463"
+    },
+    {
+      "role": "human",
+      "content": "fantastic.",
+      "timestamp": "2026-04-18T00:46:52.401278"
+    },
+    {
+      "role": "ai",
+      "content": "Fantastic indeed. The calendar’s doing its best impression of a ghost, but you’re still here, which is the useful part.",
+      "timestamp": "2026-04-18T00:46:52.402644"
+    }
+  ],
+  "metadata": {
+    "message_count": 42
+  }
+}

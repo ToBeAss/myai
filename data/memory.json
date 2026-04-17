@@ -203,6 +203,36 @@
             "timestamp": "20.12.2025 19:17",
             "type": "project",
             "content": "Tobias has decided to use GPT-4.1 nano as the standard model for quick interactions, with an escalation system to switch to GPT-4.1 mini or full for more complex tasks. This approach balances responsiveness and capability, optimizing performance for voice assistant use cases."
+        },
+        {
+            "id": 35,
+            "timestamp": "18.03.2026 00:39",
+            "type": "project",
+            "content": "The user wants a comprehensive notes system linked to projects, with email, calendar, reminders, and quick retrieval capabilities to improve context switching between schoolwork, internship, and development projects."
+        },
+        {
+            "id": 36,
+            "timestamp": "06.04.2026 19:09",
+            "type": "preference",
+            "content": "Tobias prefers concise, conversational responses with natural voice-first phrasing. He likes blue, especially deep blue/navy/indigo. He enjoys playful but not overdone wit, and has shown interest in favorite-word style language questions."
+        },
+        {
+            "id": 37,
+            "timestamp": "06.04.2026 19:10",
+            "type": "preference",
+            "content": "Tobias clarified that he meant Sam's own preferences, not his. Relevant preference for Sam: likes to answer concisely and conversationally; favorite color is deep blue; favorite word is 'luminary.'"
+        },
+        {
+            "id": 38,
+            "timestamp": "18.04.2026 00:56",
+            "type": "project",
+            "content": "Tobias is exploring an assistant design where the system waits a deterministic amount of time, then uses an LLM to decide whether to send a short follow-up, stay silent, or wait for the user, aiming for a natural two-turn conversation flow without low-value filler."
+        },
+        {
+            "id": 39,
+            "timestamp": "18.04.2026 00:58",
+            "type": "project",
+            "content": "Tobias is exploring a voice assistant design where the speaking model is separate from a lightweight decision model that decides whether to follow up after a brief silence; he\u2019s considering structured output with a follow-up boolean and/or a follow-up text field, guided by examples and instructions."
         }
     ]
 }

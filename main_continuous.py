@@ -23,7 +23,7 @@ def build_assistant() -> tuple[Agent, SpeechToText, TextToSpeech]:
     """Initialize and wire the agent, STT, and TTS components."""
     prompts = load_prompts()
 
-    llm = LLM_Wrapper(model_name="openai-gpt-4.1-nano")
+    llm = LLM_Wrapper(model_name="openai-gpt-5.4-mini")
     memory = Memory()
     agent = Agent(
         llm=llm,

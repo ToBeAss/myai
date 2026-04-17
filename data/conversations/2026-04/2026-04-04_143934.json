@@ -1,0 +1,30 @@
+{
+  "session_id": "27b214fe-5372-4b1f-ba39-ffcbd4cc6237",
+  "start_time": "2026-04-04T14:39:34.474576",
+  "last_updated": "2026-04-04T14:39:47.482236",
+  "messages": [
+    {
+      "role": "human",
+      "content": "hello",
+      "timestamp": "2026-04-04T14:39:41.048887"
+    },
+    {
+      "role": "ai",
+      "content": "Hello. What’s on your mind?",
+      "timestamp": "2026-04-04T14:39:41.049883"
+    },
+    {
+      "role": "human",
+      "content": "who are you",
+      "timestamp": "2026-04-04T14:39:47.479894"
+    },
+    {
+      "role": "ai",
+      "content": "I’m Sam, Tobias’s assistant. Precise, no fluff, here to help without wasting time or pretending to be polite.",
+      "timestamp": "2026-04-04T14:39:47.482130"
+    }
+  ],
+  "metadata": {
+    "message_count": 4
+  }
+}
