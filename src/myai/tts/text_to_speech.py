@@ -487,9 +487,10 @@ class TextToSpeech:
           boundary (including commas) to minimise time-to-first-sound.
         * **Chunk 1+ (quality chunks):** accumulate tokens and, once the
           remaining playback time of previously queued audio drops to within
-          ``avg_synthesis_time + 200 ms``, trigger synthesis at the last
-          available sentence-ending boundary (``.!?``).  This maximises input
-          length for better prosody while keeping playback gapless.
+          the chunk's *estimated* synthesis time + 200 ms (derived from an
+          observed chars/sec rate), trigger synthesis at the last available
+          sentence-ending boundary (``.!?``).  Scaling the threshold by chunk
+          length keeps playback gapless even when chunk sizes vary widely.
 
         :param text_generator: Generator that yields text tokens
         :param chunk_on: Characters used to detect chunk 0 boundaries only (default: ``",.!?"``)
@@ -515,6 +516,7 @@ class TextToSpeech:
             "synth_count": 0,         # number of completed syntheses
             "synth_sum": 0.0,         # cumulative synthesis duration
             "avg_synth": 0.4,         # rolling average, seeded at 400 ms
+            "synth_chars": 0,         # cumulative characters synthesised
         }
 
         def _remaining_playback_time() -> float:
@@ -531,11 +533,23 @@ class TextToSpeech:
                     remaining += state["play_duration"]
                 return remaining
 
-        def _update_avg(duration: float):
+        def _update_avg(duration: float, char_count: int):
             with state_lock:
                 state["synth_count"] += 1
                 state["synth_sum"] += duration
+                state["synth_chars"] += char_count
                 state["avg_synth"] = state["synth_sum"] / state["synth_count"]
+
+        def _estimate_synth_time(char_count: int) -> float:
+            """Estimate synthesis time for a chunk based on observed chars/sec."""
+            with state_lock:
+                chars = state["synth_chars"]
+                total = state["synth_sum"]
+                avg = state["avg_synth"]
+            if chars > 0 and total > 0:
+                rate = chars / total  # chars per second
+                return char_count / rate
+            return avg
 
         # ---- worker threads ----
         def synthesis_worker():
@@ -559,7 +573,7 @@ class TextToSpeech:
 
                     if audio_file:
                         audio_dur = self._estimate_audio_duration(audio_file)
-                        _update_avg(synth_dur)
+                        _update_avg(synth_dur, len(text_to_speak))
 
                         with state_lock:
                             state["queued_total"] += audio_dur
@@ -698,14 +712,19 @@ class TextToSpeech:
                     # would trigger immediately before any audio is ready.
                     with state_lock:
                         has_audio = state["has_audio"]
-                        current_avg_synth = state["avg_synth"]
                     if not has_audio:
                         continue
 
-                    remaining = _remaining_playback_time()
-                    threshold = current_avg_synth + 0.2  # 200 ms margin
-
                     to_speak = buffer[:pending_boundary + 1].strip()
+
+                    # Threshold scales with chunk length: we need enough
+                    # remaining playback time to cover synthesising *this*
+                    # chunk, not just the average of past (possibly smaller)
+                    # chunks.
+                    expected_synth = _estimate_synth_time(len(to_speak))
+                    threshold = expected_synth + 0.2  # 200 ms margin
+
+                    remaining = _remaining_playback_time()
 
                     # Edge case: chunk 0 still playing with time to spare
                     # and buffer text is very short – hold for more tokens
