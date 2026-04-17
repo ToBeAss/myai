@@ -55,6 +55,13 @@ class LLM_Wrapper:
                 api_key = SecretStr(api_key) if api_key else None,
                 **kwargs # Pass additional parameters
             )
+        elif model_name == "openai-gpt-5.4-mini":
+            api_key = os.getenv("OPENAI_API_KEY")
+            return ChatOpenAI(
+                model = "gpt-5.4-mini",
+                api_key = SecretStr(api_key) if api_key else None,
+                **kwargs # Pass additional parameters
+            )
         else: 
             raise ValueError(f"Unsupported language model: {model_name}")
         

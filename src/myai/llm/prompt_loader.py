@@ -14,6 +14,39 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 PROMPTS_DIR = REPO_ROOT / "prompts"
 
 
+def _format_section_name(name: str) -> str:
+    """Convert config keys like 'emotional_calibration' into readable headers."""
+    return name.replace("_", " ").strip()
+
+
+def _stringify_value(value: Any) -> str:
+    """Render arbitrary YAML values into deterministic, readable text."""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (int, float, bool)) or value is None:
+        return str(value)
+    if isinstance(value, list):
+        return "\n".join(f"- {_stringify_value(item)}" for item in value)
+    if isinstance(value, dict):
+        lines: List[str] = []
+        for key, item in value.items():
+            pretty_key = _format_section_name(str(key))
+            rendered_item = _stringify_value(item)
+            if "\n" in rendered_item:
+                lines.append(f"{pretty_key}:\n{rendered_item}")
+            else:
+                lines.append(f"{pretty_key}: {rendered_item}")
+        return "\n".join(lines)
+    return str(value)
+
+
+def _build_instruction_block(section_name: str, section_value: Any) -> str:
+    """Create a headed system-prompt block from one instruction subsection."""
+    header = _format_section_name(section_name)
+    body = _stringify_value(section_value)
+    return f"[{header}]\n{body}" if body else f"[{header}]"
+
+
 def load_prompts(config_path: Optional[Union[Path, str]] = None) -> Dict[str, Any]:
     """
     Load agent prompts and configuration from a YAML file.
@@ -53,11 +86,10 @@ def load_prompts(config_path: Optional[Union[Path, str]] = None) -> Dict[str, An
     agent_config = config.get('agent', {})
     instructions_config = config.get('instructions', {})
     
-    # Flatten all instruction categories into a single list
-    all_instructions = []
-    for category, instruction_list in instructions_config.items():
-        if isinstance(instruction_list, list):
-            all_instructions.extend(instruction_list)
+    # Convert each instruction subsection into a headed string block.
+    all_instructions: List[str] = []
+    for section_name, section_value in instructions_config.items():
+        all_instructions.append(_build_instruction_block(str(section_name), section_value))
     
     return {
         'name': agent_config.get('name', 'Agent'),
@@ -66,7 +98,7 @@ def load_prompts(config_path: Optional[Union[Path, str]] = None) -> Dict[str, An
     }
 
 
-def load_instructions_by_category(config_path: Optional[Union[Path, str]] = None) -> Dict[str, List[str]]:
+def load_instructions_by_category(config_path: Optional[Union[Path, str]] = None) -> Dict[str, Any]:
     """
     Load instructions organized by category for more granular control.
     
