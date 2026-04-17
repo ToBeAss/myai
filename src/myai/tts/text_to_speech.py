@@ -722,7 +722,7 @@ class TextToSpeech:
                     # chunk, not just the average of past (possibly smaller)
                     # chunks.
                     expected_synth = _estimate_synth_time(len(to_speak))
-                    threshold = expected_synth + 0.2  # 200 ms margin
+                    threshold = expected_synth * 1.2 + 0.2
 
                     remaining = _remaining_playback_time()
 
