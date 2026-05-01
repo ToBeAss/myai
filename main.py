@@ -34,8 +34,12 @@ memory = Memory()
 myai = Agent(llm=llm, memory=memory, agent_name=prompts['name'], description=prompts['description'])
 
 # Load and apply all instructions from configuration
-for instruction in prompts['instructions']:
-    myai.add_instruction(instruction)
+system_prompt = prompts.get('system_prompt', '').strip()
+if system_prompt:
+    myai.add_instruction(system_prompt)
+else:
+    for instruction in prompts['instructions']:
+        myai.add_instruction(instruction)
 
 # Add text-specific instructions
 #myai.add_instruction("Use emojis to make the conversation more engaging.")
@@ -64,12 +68,12 @@ tts: Optional[TextToSpeech] = None
 if voice_mode:
     print("\n🔧 Initializing text-to-speech system...")
     tts = TextToSpeech(
-        voice_name="en-GB-Chirp3-HD-Achernar",  # Premium voice (100k free chars/month)
-        language_code="en-GB",
-        speaking_rate=1.1,
+        voice_name="en-AU-Chirp3-HD-Achernar",  # Premium voice (100k free chars/month)
+        language_code="en-AU",
+        speaking_rate=1.05,
         pitch=0.0,
         enforce_free_tier=True,  # Stay within free tier
-        fallback_voice="en-GB-Wavenet-A"  # Fallback to Wavenet voice (4M free chars/month)
+        fallback_voice="en-AU-Wavenet-A"  # Fallback to Wavenet voice (4M free chars/month)
     )
     print("✅ Voice mode enabled! You'll hear responses in your earphones.")
 else:

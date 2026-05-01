@@ -40,16 +40,20 @@ def build_assistant() -> tuple[Agent, SpeechToText, TextToSpeech]:
 
     print("🔧 Initializing text-to-speech system...")
     tts = TextToSpeech(
-        voice_name="en-GB-Chirp3-HD-Achernar",
-        language_code="en-GB",
-        speaking_rate=1.1,
+        voice_name="en-AU-Chirp3-HD-Achernar",
+        language_code="en-AU",
+        speaking_rate=1.05,
         pitch=0.0,
         enforce_free_tier=True,
-        fallback_voice="en-GB-Wavenet-A",
+        fallback_voice="en-AU-Wavenet-A",
     )
 
-    for instruction in prompts["instructions"]:
-        agent.add_instruction(instruction)
+    system_prompt = prompts.get("system_prompt", "").strip()
+    if system_prompt:
+        agent.add_instruction(system_prompt)
+    else:
+        for instruction in prompts["instructions"]:
+            agent.add_instruction(instruction)
 
     agent.add_tool(read_from_memory_tool_blueprint.create_tool())
     agent.add_tool(write_to_memory_tool_blueprint.create_tool())

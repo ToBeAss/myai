@@ -84,16 +84,27 @@ def load_prompts(config_path: Optional[Union[Path, str]] = None) -> Dict[str, An
     
     # Extract agent information
     agent_config = config.get('agent', {})
+    prompts_config = config.get('prompts', {})
     instructions_config = config.get('instructions', {})
+
+    system_prompt = ""
+    if isinstance(prompts_config, dict):
+        system_prompt = str(prompts_config.get('system_prompt', '') or '').strip()
     
-    # Convert each instruction subsection into a headed string block.
+    # Build instruction list in priority order:
+    # 1) New schema: prompts.system_prompt
+    # 2) Legacy schema: instructions.* sections
     all_instructions: List[str] = []
+    if system_prompt:
+        all_instructions.append(system_prompt)
+
     for section_name, section_value in instructions_config.items():
         all_instructions.append(_build_instruction_block(str(section_name), section_value))
     
     return {
         'name': agent_config.get('name', 'Agent'),
         'description': agent_config.get('description', 'You are an AI assistant.'),
+        'system_prompt': system_prompt,
         'instructions': all_instructions
     }
 
